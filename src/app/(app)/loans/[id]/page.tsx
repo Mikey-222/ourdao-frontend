@@ -154,6 +154,7 @@ export default function LoanDetailsPage() {
       case 2: return <ClockIcon className="h-6 w-6 text-blue-500 dark:text-blue-400" />
       case 3: return <CheckCircleIcon className="h-6 w-6 text-green-500 dark:text-green-400" />
       case 4: return <XCircleIcon className="h-6 w-6 text-red-500 dark:text-red-400" />
+      case 7: return <ClockIcon className="h-6 w-6 text-amber-500 dark:text-amber-400" />
       default: return <ClockIcon className="h-6 w-6 text-muted-foreground" />
     }
   }
@@ -164,6 +165,7 @@ export default function LoanDetailsPage() {
       case 2: return 'text-blue-600 bg-blue-50 border-blue-200 dark:text-blue-400 dark:bg-blue-950/30 dark:border-blue-900'
       case 3: return 'text-green-600 bg-green-50 border-green-200 dark:text-green-400 dark:bg-green-950/30 dark:border-green-900'
       case 4: return 'text-red-600 bg-red-50 border-red-200 dark:text-red-400 dark:bg-red-950/30 dark:border-red-900'
+    case 7: return 'text-amber-700 bg-amber-50 border-amber-200 dark:text-amber-300 dark:bg-amber-950/30 dark:border-amber-900'
       default: return 'text-muted-foreground bg-muted border-border'
     }
   }
@@ -374,6 +376,25 @@ export default function LoanDetailsPage() {
                     You&apos;ve already voted on this proposal. A member can only vote once, so the
                     controls are disabled.
                   </p>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Approved by vote but the treasury can't cover it yet */}
+            {proposal.status === PROPOSAL_STATUS_AWAITING_FUNDS && (
+              <Card role="status" className="border-amber-300 dark:border-amber-900">
+                <CardHeader>
+                  <CardTitle>Approved — awaiting treasury funds</CardTitle>
+                  <CardDescription>
+                    Members voted to approve this loan, but the treasury balance is too low to
+                    disburse {formatToken(proposal.amount)} right now. It will be paid out once the
+                    treasury is topped up and the loan is disbursed.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Button asChild variant="outline">
+                    <Link href="/treasury">Go to Treasury</Link>
+                  </Button>
                 </CardContent>
               </Card>
             )}

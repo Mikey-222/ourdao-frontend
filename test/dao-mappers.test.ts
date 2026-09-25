@@ -9,8 +9,15 @@ import {
   mapTreasuryProposal,
   mapLoan,
   eventLabel,
+  resolveLoanPolicy,
 } from '@/lib/dao-mappers'
 import { MemberStatus } from '@/types/dao'
+import {
+  PROPOSAL_STATUS_LABELS,
+  PROPOSAL_STATUS_AWAITING_FUNDS,
+  LOAN_POLICY_FALLBACKS,
+  GOVERNANCE_PERIOD_FALLBACKS,
+} from '@/constants'
 import type { BackendLoan } from '@/lib/backend'
 
 describe('toLoan', () => {
@@ -131,6 +138,11 @@ describe('loanStatusCode', () => {
   it('maps Approved status to 3', () => {
     expect(loanStatusCode({ status: 'Approved', phase: 'Executed' })).toBe(3)
   })
+  it('maps ApprovedPendingDisbursement to the awaiting-funds code', () => {
+    expect(loanStatusCode({ status: 'ApprovedPendingDisbursement', phase: 'Executed' })).toBe(
+      PROPOSAL_STATUS_AWAITING_FUNDS
+    )
+  })
   it('maps Executed status to 5', () => {
     expect(loanStatusCode({ status: 'Executed', phase: 'Executed' })).toBe(5)
   })
@@ -146,6 +158,19 @@ describe('loanStatusCode', () => {
   })
   it('defaults to 0 for anything else', () => {
     expect(loanStatusCode({ status: 'Pending', phase: 'SomethingNew' })).toBe(0)
+  })
+})
+
+describe('awaiting-funds status (ApprovedPendingDisbursement)', () => {
+  it('maps a loan stranded by a short treasury to its own code, not an in-progress one', () => {
+    expect(loanStatusCode({ status: 'ApprovedPendingDisbursement', phase: 'Voting' })).toBe(7)
+    expect(loanStatusCode({ status: ['ApprovedPendingDisbursement'], phase: 'Expired' })).toBe(7)
+  })
+  it('maps a treasury proposal stranded by a short treasury to the same code', () => {
+    expect(mapTreasuryProposal({ id: 1, status: 'ApprovedPendingDisbursement' }).status).toBe(7)
+  })
+  it('has a distinct human label', () => {
+    expect(PROPOSAL_STATUS_LABELS[7]).toBe('Awaiting Funds')
   })
 })
 
@@ -241,11 +266,60 @@ describe('eventLabel', () => {
     expect(eventLabel('loan_dflt')).toBe('Loan defaulted')
     expect(eventLabel('loan_appr')).toBe('Loan approved')
   })
+  it.each([
+    ['loan_rej', 'Loan proposal rejected'],
+    ['loan_wait', 'Loan approved, awaiting treasury funds'],
+    ['tre_rej', 'Treasury withdrawal rejected'],
+    ['tre_wait', 'Treasury withdrawal approved, awaiting funds'],
+  ])('labels the failure event %s', (symbol, label) => {
+    expect(eventLabel(symbol)).toBe(label)
+  })
   it('falls back to the raw symbol for an unrecognized one', () => {
     expect(eventLabel('some_new_symbol')).toBe('some_new_symbol')
   })
   it('falls back to "Unknown event" for an empty/missing symbol', () => {
     expect(eventLabel(undefined)).toBe('Unknown event')
     expect(eventLabel('')).toBe('Unknown event')
+  })
+})
+
+describe('resolveLoanPolicy', () => {
+  it('uses the chain values when an admin has changed the policy', () => {
+    const policy = resolveLoanPolicy(
+      { min_interest_rate: 100, max_interest_rate: 3500, max_loan_duration: BigInt(86400) },
+      6600
+    )
+    expect(policy).toEqual({
+      minInterestRate: 100,
+      maxInterestRate: 3500,
+      maxLoanDuration: 86400,
+      consensusThreshold: 6600,
+      fromChain: true,
+    })
+  })
+
+  it('falls back, and says so, before the policy has loaded', () => {
+    expect(resolveLoanPolicy(undefined, undefined)).toEqual({
+      ...LOAN_POLICY_FALLBACKS,
+      fromChain: false,
+    })
+  })
+
+  it('falls back per field for anything missing or non-numeric', () => {
+    const policy = resolveLoanPolicy({ min_interest_rate: 'nope', max_interest_rate: 900 }, 5000)
+    expect(policy.minInterestRate).toBe(LOAN_POLICY_FALLBACKS.minInterestRate)
+    expect(policy.maxInterestRate).toBe(900)
+    expect(policy.maxLoanDuration).toBe(LOAN_POLICY_FALLBACKS.maxLoanDuration)
+  })
+
+  it('is not from chain when only the policy has arrived', () => {
+    expect(resolveLoanPolicy({ min_interest_rate: 100 }, null).fromChain).toBe(false)
+  })
+})
+
+describe('mapLoanProposal voting end', () => {
+  it('ends voting one governance voting period after editing ends', () => {
+    const p = mapLoanProposal({ editing_period_end: 1000 })
+    expect(p.votingEndTime).toBe(1000 + GOVERNANCE_PERIOD_FALLBACKS.votingPeriod)
   })
 })

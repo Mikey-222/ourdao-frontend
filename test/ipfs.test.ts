@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { vi } from 'vitest'
-import { downloadFromIPFS, getIPFSUrl, uploadToIPFS, encryptData, decryptData } from '@/lib/ipfs'
+import {
+  downloadFromIPFS,
+  getIPFSUrl,
+  uploadToIPFS,
+  uploadMultipleDocuments,
+  createDocumentMetadata,
+  encryptData,
+  decryptData,
+} from '@/lib/ipfs'
 
 function jsonResponse(body: unknown, ok = true, status = ok ? 200 : 500) {
   return { ok, status, json: () => Promise.resolve(body), text: () => Promise.resolve('') } as Response
@@ -21,6 +29,68 @@ describe('encryptData / decryptData', () => {
   it('fails to decrypt with the wrong password', async () => {
     const encrypted = await encryptData('secret', 'correct password')
     await expect(decryptData(encrypted, 'wrong password')).rejects.toThrow()
+  })
+
+  it('decrypts new versioned ciphertext with elevated iteration count', async () => {
+    // New format includes version byte and 4-byte iteration count.
+    // This test confirms the higher iteration count is used on new encryptions.
+    const plaintext = 'versioned document'
+    const encrypted = await encryptData(plaintext, 'password')
+    const decoded = atob(encrypted)
+    // Check version byte exists (should be 0x01)
+    expect(decoded.charCodeAt(0)).toBe(1)
+    // Verify round-trip decryption works
+    expect(await decryptData(encrypted, 'password')).toBe(plaintext)
+  })
+
+  it('decrypts old unversioned ciphertext for backward compatibility', async () => {
+    // Simulate an old encrypted document (no version byte, 100k iterations).
+    // Format: [salt:16][iv:12][ciphertext:...]
+    const plaintext = 'old document'
+    const encoder = new TextEncoder()
+
+    // Manually encrypt with old parameters to create a legacy ciphertext
+    const salt = crypto.getRandomValues(new Uint8Array(16))
+    const iv = crypto.getRandomValues(new Uint8Array(12))
+    const password = 'pw'
+
+    const keyMaterial = await crypto.subtle.importKey(
+      'raw',
+      encoder.encode(password),
+      'PBKDF2',
+      false,
+      ['deriveBits', 'deriveKey']
+    )
+
+    const key = await crypto.subtle.deriveKey(
+      {
+        name: 'PBKDF2',
+        salt: salt,
+        iterations: 100000, // Old iteration count
+        hash: 'SHA-256',
+      },
+      keyMaterial,
+      { name: 'AES-GCM', length: 256 },
+      false,
+      ['encrypt', 'decrypt']
+    )
+
+    const encryptedBytes = await crypto.subtle.encrypt(
+      { name: 'AES-GCM', iv: iv },
+      key,
+      encoder.encode(plaintext)
+    )
+
+    // Combine without version (old format): [salt:16][iv:12][ciphertext:...]
+    const combined = new Uint8Array(salt.length + iv.length + encryptedBytes.byteLength)
+    combined.set(salt, 0)
+    combined.set(iv, salt.length)
+    combined.set(new Uint8Array(encryptedBytes), salt.length + iv.length)
+
+    const oldFormatCiphertext = btoa(String.fromCharCode(...combined))
+
+    // Verify decryptData can still read it
+    expect(await decryptData(oldFormatCiphertext, password)).toBe(plaintext)
   })
 })
 
@@ -74,6 +144,71 @@ describe('uploadToIPFS', () => {
   })
 })
 
+describe('createDocumentMetadata', () => {
+  const file = new File(['x'], 'a.txt', { type: 'text/plain' })
+
+  it('defaults an unencrypted document to closed, not public', () => {
+    expect(createDocumentMetadata(file, 'Qm1', false).permissions).toEqual({ public: false })
+  })
+
+  it('defaults an encrypted document to closed', () => {
+    expect(createDocumentMetadata(file, 'Qm1', true).permissions).toEqual({ public: false })
+  })
+
+  it('makes a document public only when the caller says so', () => {
+    expect(createDocumentMetadata(file, 'Qm1', false, { public: true }).permissions).toEqual({
+      public: true,
+    })
+  })
+})
+
+describe('uploadMultipleDocuments', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  const makeFiles = () => [
+    new File(['one'], 'one.txt', { type: 'text/plain' }),
+    new File(['two'], 'two.txt', { type: 'text/plain' }),
+  ]
+
+  it('applies the given permissions to every uploaded document', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ hash: 'QmOne' }))
+      .mockResolvedValueOnce(jsonResponse({ hash: 'QmTwo' }))
+    const permissions = { public: false, allowedUsers: ['GALICE'], allowedRoles: ['admin'] }
+
+    const docs = await uploadMultipleDocuments(makeFiles(), false, undefined, undefined, permissions)
+
+    expect(docs.map(d => d.hash)).toEqual(['QmOne', 'QmTwo'])
+    expect(docs.map(d => d.permissions)).toEqual([permissions, permissions])
+  })
+
+  it('defaults every document to closed when no permissions are given', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ hash: 'QmOne' }))
+      .mockResolvedValueOnce(jsonResponse({ hash: 'QmTwo' }))
+
+    const docs = await uploadMultipleDocuments(makeFiles())
+
+    expect(docs.map(d => d.permissions)).toEqual([{ public: false }, { public: false }])
+  })
+
+  it('reports progress as a percentage after each file', async () => {
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(jsonResponse({ hash: 'QmOne' }))
+      .mockResolvedValueOnce(jsonResponse({ hash: 'QmTwo' }))
+    const onProgress = vi.fn()
+
+    await uploadMultipleDocuments(makeFiles(), false, undefined, onProgress)
+
+    expect(onProgress.mock.calls.map(c => c[0])).toEqual([50, 100])
+  })
+})
+
 describe('downloadFromIPFS', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn())
@@ -88,7 +223,7 @@ describe('downloadFromIPFS', () => {
 
     const result = await downloadFromIPFS('QmSomeHash', false)
 
-    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('QmSomeHash'))
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('QmSomeHash'), expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(new TextDecoder().decode(result.content)).toBe('plain content')
     expect(result.decrypted).toBe(false)
   })

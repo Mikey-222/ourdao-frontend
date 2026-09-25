@@ -24,6 +24,10 @@ vi.mock('@/components/ConnectButton', () => ({
   ConnectButton: () => <button type="button">Connect Wallet</button>,
 }))
 
+vi.mock('@/components/NetworkBadge', () => ({
+  NetworkBadge: () => null,
+}))
+
 vi.mock('@/components/NotificationCenter', () => ({
   default: () => <div data-testid="notification-center-stub" />,
 }))

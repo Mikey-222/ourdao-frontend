@@ -25,6 +25,8 @@ vi.mock('@/lib/wallet', () => ({
     connect: vi.fn(),
     disconnect: vi.fn(),
     signXDR: vi.fn(),
+    networkMismatch: false,
+    walletNetwork: mockIsConnected ? 'TESTNET' : null,
   }),
 }))
 
@@ -114,5 +116,19 @@ describe('AppShell navigation', () => {
   it('does not show the "no contract configured" banner when a contract is configured', () => {
     renderWithProviders(<AppShell>content</AppShell>)
     expect(screen.queryByText(/No contract configured/)).not.toBeInTheDocument()
+  })
+
+  it('renders the network badge in the header when wallet is connected', () => {
+    mockIsConnected = true
+    renderWithProviders(<AppShell>content</AppShell>)
+    expect(screen.getByText('Testnet')).toBeInTheDocument()
+  })
+
+  it('does not render the network badge when wallet is not connected', () => {
+    mockWalletAddress = null
+    mockIsConnected = false
+    renderWithProviders(<AppShell>content</AppShell>)
+    // Badge should not be rendered; only Connect button should appear
+    expect(screen.queryByText(/Testnet|Mainnet|Futurenet/)).not.toBeInTheDocument()
   })
 })

@@ -18,7 +18,7 @@ import {
 } from '@heroicons/react/24/outline'
 import { useDAOStats, useUserData, useRewards, useDAOEvents, eventLabel } from '@/hooks/useDAO'
 import { formatToken, formatDate, formatAddress } from '@/lib/utils'
-import { MEMBER_STATUS_LABELS } from '@/constants'
+import { MEMBER_STATUS_LABELS, NON_MEMBER_LABEL } from '@/constants'
 import toast from 'react-hot-toast'
 import { useIsMobile, useResponsiveCardLayout } from '@/lib/responsive'
 import { LoadingSpinner } from '@/components/ui/skeleton'
@@ -162,7 +162,7 @@ export default function DashboardPage() {
       href: '/privacy',
       color: 'text-yellow-600 dark:text-yellow-400',
     },
-    ...(userData.member?.status === 3 ? [{
+    ...(userData.isAdmin ? [{
       title: 'Admin Panel',
       description: 'Manage DAO operations and configuration',
       icon: ShieldCheckIcon,
@@ -194,7 +194,7 @@ export default function DashboardPage() {
                       {formatAddress(userData.address || '')}
                     </h3>
                     <p className="text-sm text-muted-foreground">
-                      Status: {MEMBER_STATUS_LABELS[userData.member?.status || 0]}
+                      Status: {userData.member ? MEMBER_STATUS_LABELS[userData.member.status] : NON_MEMBER_LABEL}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Member since: {formatDate(userData.member?.joinDate || 0)}

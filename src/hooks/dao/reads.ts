@@ -6,7 +6,8 @@ import { CONTRACT_ID, isContractConfigured } from '@/lib/stellar'
 import { daoRead } from '@/lib/dao-client'
 import { backend } from '@/lib/backend'
 import type { UserData, DAOStats } from '@/types/dao'
-import { asBigInt, toLoan, toMemberStatus } from '@/lib/dao-mappers'
+import { asBigInt, resolveLoanPolicy, toLoan, toMemberStatus } from '@/lib/dao-mappers'
+import type { UILoanPolicy } from '@/lib/dao-mappers'
 
 export function useDAOContract() {
   return { contractId: CONTRACT_ID, configured: isContractConfigured() }
@@ -75,6 +76,8 @@ export type ExtendedStats = DAOStats & {
   initialized: boolean
   isPaused: boolean
   membershipFee: bigint
+  /** Policy cap on a loan as basis points of the treasury balance. */
+  maxLoanToTreasuryRatio: number
   consensusThreshold: number
   indexerStale: boolean
   secondsSinceUpdate: number | null
@@ -91,6 +94,24 @@ export type ExtendedStats = DAOStats & {
     confidentialLoans: boolean
     restaking: boolean
   }
+}
+
+/** The loan policy as the contract currently has it. An admin can change it at
+ *  any time, so it is refetched rather than cached forever; until the first
+ *  read lands the labelled fallbacks stand in (`fromChain` is false). */
+export function useLoanPolicy(): UILoanPolicy {
+  const { data } = useQuery({
+    queryKey: ['loanPolicy'],
+    enabled: isContractConfigured(),
+    queryFn: async () => {
+      const [policy, threshold] = await Promise.all([
+        daoRead.getLoanPolicy(),
+        daoRead.getConsensusThreshold(),
+      ])
+      return { policy, threshold }
+    },
+  })
+  return resolveLoanPolicy(data?.policy, data?.threshold)
 }
 
 export function useDAOStats(): ExtendedStats {
@@ -124,6 +145,10 @@ export function useDAOStats(): ExtendedStats {
     (data?.policy as Record<string, unknown> | undefined)?.membership_contribution
   )
 
+  const maxLoanToTreasuryRatio = Number(
+    (data?.policy as Record<string, unknown> | undefined)?.max_loan_to_treasury_ratio ?? 0
+  )
+
   return {
     totalMembers: Number(data?.totalMembers ?? 0),
     activeMembers: Number(data?.activeMembers ?? 0),
@@ -135,6 +160,7 @@ export function useDAOStats(): ExtendedStats {
     initialized: isContractConfigured() && data?.threshold != null,
     isPaused: !!data?.isPaused,
     membershipFee,
+    maxLoanToTreasuryRatio,
     consensusThreshold: Number(data?.threshold ?? 0),
     indexerStale: agg?.indexerStale ?? false,
     secondsSinceUpdate: agg?.secondsSinceUpdate ?? null,

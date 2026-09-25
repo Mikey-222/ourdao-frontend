@@ -28,7 +28,7 @@ import {
   type UITreasuryProposal,
 } from '@/hooks/useDAO'
 import { formatToken, formatAddress, formatThreshold } from '@/lib/utils'
-import { PROPOSAL_STATUS_LABELS } from '@/constants'
+import { PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_AWAITING_FUNDS } from '@/constants'
 
 function StatusBadge({ status }: { status: number }) {
   const variant =
@@ -36,7 +36,9 @@ function StatusBadge({ status }: { status: number }) {
       ? 'default'
       : status === 4
         ? 'destructive'
-        : 'secondary'
+        : status === PROPOSAL_STATUS_AWAITING_FUNDS
+          ? 'outline'
+          : 'secondary'
   return (
     <Badge variant={variant}>
       {PROPOSAL_STATUS_LABELS[status as keyof typeof PROPOSAL_STATUS_LABELS]}

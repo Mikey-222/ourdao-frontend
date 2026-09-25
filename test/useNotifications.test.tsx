@@ -145,6 +145,25 @@ describe('useActivityFeed', () => {
     expect(latest?.activities[0]).toMatchObject({ type: 'loan', title: 'Loan approved' })
   })
 
+  it.each([
+    ['loan_rej', 'loan', 'Loan rejected'],
+    ['loan_wait', 'loan', 'Loan awaiting funds'],
+    ['tre_rej', 'treasury', 'Treasury proposal rejected'],
+    ['tre_wait', 'treasury', 'Treasury withdrawal awaiting funds'],
+  ])('surfaces the failure event %s as a distinct activity', async (symbol, type, title) => {
+    mockGetEvents.mockResolvedValue([event({ symbol })])
+    let latest: ReturnType<typeof useActivityFeed> | undefined
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(
+      <QueryClientProvider client={client}>
+        <ActivityHarness onRender={(r) => { latest = r }} />
+      </QueryClientProvider>
+    )
+
+    await waitFor(() => expect(latest?.activities).toHaveLength(1))
+    expect(latest?.activities[0]).toMatchObject({ type, title })
+  })
+
   it('falls back to the raw symbol for an unrecognized event', async () => {
     mockGetEvents.mockResolvedValue([event({ symbol: 'some_future_event' })])
     let latest: ReturnType<typeof useActivityFeed> | undefined

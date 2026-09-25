@@ -5,6 +5,11 @@
 import type { BackendEvent, BackendLoan } from '@/lib/backend'
 import type { Loan } from '@/types/dao'
 import { MemberStatus } from '@/types/dao'
+import {
+  GOVERNANCE_PERIOD_FALLBACKS,
+  LOAN_POLICY_FALLBACKS,
+  PROPOSAL_STATUS_AWAITING_FUNDS,
+} from '@/constants'
 
 export const asBigInt = (v: unknown): bigint => {
   try {
@@ -52,13 +57,43 @@ export function toMemberStatus(raw: unknown): MemberStatus {
   return t === 'ActiveMember' ? MemberStatus.ACTIVE_MEMBER : MemberStatus.INACTIVE_MEMBER
 }
 
-const VOTING_PERIOD = 7 * 24 * 60 * 60
+export interface UILoanPolicy {
+  minInterestRate: number
+  maxInterestRate: number
+  maxLoanDuration: number
+  consensusThreshold: number
+  /** False while any value is still the pre-load fallback. */
+  fromChain: boolean
+}
+
+const numOr = (v: unknown, fallback: number): number => {
+  if (v == null) return fallback
+  const n = Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
+/** Resolve the effective loan policy: the chain's value wherever it was read,
+ *  the labelled fallback only for what is still missing. */
+export function resolveLoanPolicy(
+  rawPolicy: Record<string, unknown> | null | undefined,
+  consensusThreshold?: number | null
+): UILoanPolicy {
+  const fromChain = rawPolicy != null && consensusThreshold != null
+  return {
+    minInterestRate: numOr(rawPolicy?.min_interest_rate, LOAN_POLICY_FALLBACKS.minInterestRate),
+    maxInterestRate: numOr(rawPolicy?.max_interest_rate, LOAN_POLICY_FALLBACKS.maxInterestRate),
+    maxLoanDuration: numOr(rawPolicy?.max_loan_duration, LOAN_POLICY_FALLBACKS.maxLoanDuration),
+    consensusThreshold: numOr(consensusThreshold, LOAN_POLICY_FALLBACKS.consensusThreshold),
+    fromChain,
+  }
+}
 
 /** Map the contract's phase+status onto the UI's numeric ProposalStatus. */
 export function loanStatusCode(raw: Record<string, unknown>): number {
   const status = tag(raw.status)
   const phase = tag(raw.phase)
   if (status === 'Approved') return 3
+  if (status === 'ApprovedPendingDisbursement') return PROPOSAL_STATUS_AWAITING_FUNDS
   if (status === 'Executed') return 5
   if (status === 'Rejected' || phase === 'Expired') return 4
   if (phase === 'Voting') return 2
@@ -100,7 +135,7 @@ export function mapLoanProposal(raw: Record<string, unknown>, hasVoted = false):
     votesAgainst: Number(raw.against_votes ?? 0),
     creationTime: Number(raw.created_at ?? 0),
     votingStartTime: editingEnd,
-    votingEndTime: editingEnd ? editingEnd + VOTING_PERIOD : 0,
+    votingEndTime: editingEnd ? editingEnd + GOVERNANCE_PERIOD_FALLBACKS.votingPeriod : 0,
     isPrivate: false, // loan proposals are public; treasury proposals can be private
     documentHash: '',
     hasVoted,
@@ -166,7 +201,14 @@ export interface UITreasuryProposal {
  *  distinction the contract doesn't expose. */
 export function mapTreasuryProposal(raw: Record<string, unknown>, hasVoted = false): UITreasuryProposal {
   const status = tag(raw.status)
-  const code = status === 'Executed' ? 5 : status === 'Rejected' ? 4 : 2
+  const code =
+    status === 'Executed'
+      ? 5
+      : status === 'Rejected'
+        ? 4
+        : status === 'ApprovedPendingDisbursement'
+          ? PROPOSAL_STATUS_AWAITING_FUNDS
+          : 2
   const reason = String(raw.reason ?? '')
   return {
     id: Number(raw.id ?? 0),
@@ -197,10 +239,14 @@ const EVENT_LABELS: Record<string, string> = {
   loan_appr: 'Loan approved',
   loan_rpy: 'Loan repayment',
   loan_dflt: 'Loan defaulted',
+  loan_rej: 'Loan proposal rejected',
+  loan_wait: 'Loan approved, awaiting treasury funds',
   interest: 'Interest distributed',
   tre_prop: 'Treasury withdrawal proposed',
   tre_vote: 'Treasury vote cast',
   tre_exec: 'Treasury withdrawal executed',
+  tre_rej: 'Treasury withdrawal rejected',
+  tre_wait: 'Treasury withdrawal approved, awaiting funds',
   staked: 'Member staked',
   unstaked: 'Member unstaked',
   name_reg: 'Name registered',

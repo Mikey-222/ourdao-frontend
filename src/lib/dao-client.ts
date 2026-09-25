@@ -28,6 +28,18 @@ import {
 } from './stellar'
 import { formatContractError } from './contract-errors'
 
+// Multiplier for inclusion fee to survive network congestion.
+// The inclusion fee (stroops/byte) is what validators use to order transactions
+// when the ledger is full. BASE_FEE (100 stroops) is the protocol floor, not a
+// recommended value. This multiplier ensures submissions carry headroom above the
+// floor, preventing silent drops when competing with higher-fee transactions.
+// Note: This is distinct from Soroban's resource fee, which prepareTransaction
+// computes separately and adds on top of this inclusion fee.
+const INCLUSION_FEE_MULTIPLIER = 1.5
+// TransactionBuilder takes the fee as a string of stroops, and BASE_FEE is
+// itself a string, so it must be coerced before the multiplication.
+const INCLUSION_FEE = String(Math.ceil(Number(BASE_FEE) * INCLUSION_FEE_MULTIPLIER))
+
 // ---------------------------------------------------------------------------
 // ScVal argument builders (JS value -> Soroban value with the right type)
 // ---------------------------------------------------------------------------
@@ -105,20 +117,11 @@ export async function read<T = unknown>(
   if (!isContractConfigured()) return null
 
   const contract = new Contract(CONTRACT_ID)
-  // TODO #146: Simulation needs a source account but never touches it on-chain.
-  // Currently generates a throwaway Ed25519 keypair on every read (elliptic-curve
-  // work repeated per refetch interval). This should be replaced with a fixed,
-  // well-known public key constant (e.g., all-zeros address), since simulation
-  // never validates the signature or checks the account state.
-  //
-  // Improvement suggestion: Create a module-level constant like:
-  // const SIMULATION_SOURCE_KEY = '0'.repeat(56); // or documented placeholder address
-  // Then reuse it: const source = new Account(SIMULATION_SOURCE_KEY, '0');
-  // This eliminates the per-read cryptographic overhead while maintaining identical
-  // simulation results (the SDK's simulateTransaction doesn't authenticate sources).
+  // Simulation needs a source account but never touches it on-chain; a throwaway
+  // keypair is generated per read even though a fixed placeholder would do.
   const source = new Account(Keypair.random().publicKey(), '0')
   const tx = new TransactionBuilder(source, {
-    fee: BASE_FEE,
+    fee: INCLUSION_FEE,
     networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(contract.call(method, ...args))
@@ -180,7 +183,7 @@ export async function invoke(
   const contract = new Contract(CONTRACT_ID)
   const account = await server.getAccount(walletAddress)
   const built = new TransactionBuilder(account, {
-    fee: BASE_FEE,
+    fee: INCLUSION_FEE,
     networkPassphrase: NETWORK_PASSPHRASE,
   })
     .addOperation(contract.call(method, ...args))
