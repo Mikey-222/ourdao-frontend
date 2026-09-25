@@ -15,57 +15,6 @@ export enum MemberStatus {
   SUSPENDED_MEMBER = 3,
 }
 
-export enum ProposalStatus {
-  PENDING = 0,
-  IN_EDITING = 1,
-  IN_VOTING = 2,
-  APPROVED = 3,
-  REJECTED = 4,
-  EXECUTED = 5,
-  CANCELLED = 6,
-}
-
-export enum ProposalType {
-  LOAN_REQUEST = 0,
-  TREASURY_ALLOCATION = 1,
-  PARAMETER_CHANGE = 2,
-  MEMBER_REMOVAL = 3,
-}
-
-export interface LoanProposal {
-  id: number
-  borrower: string
-  amount: bigint
-  purpose: string
-  interestRate: number
-  repaymentTerm: number
-  collateralAmount: bigint
-  status: ProposalStatus
-  votesFor: number
-  votesAgainst: number
-  creationTime: number
-  votingStartTime: number
-  votingEndTime: number
-  isPrivate: boolean
-  privacyCommitment: string
-  documentHash: string
-}
-
-export interface TreasuryProposal {
-  id: number
-  proposer: string
-  title: string
-  description: string
-  amount: bigint
-  recipient: string
-  status: ProposalStatus
-  votesFor: number
-  votesAgainst: number
-  creationTime: number
-  votingStartTime: number
-  votingEndTime: number
-}
-
 export interface Loan {
   id: number
   borrower: string
@@ -80,23 +29,6 @@ export interface Loan {
   collateralAmount: bigint
 }
 
-export interface LoanPolicy {
-  maxLoanAmount: bigint
-  minInterestRate: number
-  maxInterestRate: number
-  maxRepaymentTerm: number
-  collateralRequirementBPS: number
-  gracePeriod: number
-}
-
-export interface SimpleOperator {
-  operatorAddress: string
-  name: string
-  expectedAPY: number
-  totalStaked: bigint
-  isApproved: boolean
-}
-
 export interface DAOStats {
   totalMembers: number
   activeMembers: number
@@ -107,29 +39,9 @@ export interface DAOStats {
   totalRestaked: bigint
 }
 
-export interface ContractConfig {
-  address: string
-  initialized: boolean
-  consensusThreshold: number
-  membershipFee: bigint
-  ensVotingEnabled: boolean
-  documentStorageEnabled: boolean
-  privateVotingEnabled: boolean
-  confidentialLoansEnabled: boolean
-  restakingEnabled: boolean
-  privacyLevel: number
-}
-
 export interface UserData {
   isConnected: boolean
   address?: string
-  /**
-   * True while the membership/admin read is in flight for the connected
-   * address. `isMember`/`isAdmin` collapse "not yet known" and "false" into
-   * the same value, so consumers that redirect or hard-gate on them must
-   * wait for this to go false before treating either as a real answer — see
-   * the dashboard/register redirect effects and the admin panel guard.
-   */
   isLoading: boolean
   isMember: boolean
   isAdmin: boolean
@@ -140,65 +52,4 @@ export interface UserData {
   pendingYield: bigint
   hasActiveLoan: boolean
   loans: Loan[]
-}
-
-export interface NotificationData {
-  id: string
-  type: 'success' | 'error' | 'warning' | 'info'
-  title: string
-  message: string
-  timestamp: number
-  read: boolean
-}
-
-// Event types for real-time updates
-export interface DAOEvent {
-  event: string
-  args: Record<string, unknown>
-  blockNumber: number
-  transactionHash: string
-  timestamp: number
-}
-
-export interface MemberRegisteredEvent extends DAOEvent {
-  args: {
-    member: string
-    membershipFee: bigint
-    timestamp: number
-  }
-}
-
-export interface LoanRequestedEvent extends DAOEvent {
-  args: {
-    proposalId: number
-    borrower: string
-    amount: bigint
-    purpose: string
-    isPrivate: boolean
-  }
-}
-
-export interface VoteCastEvent extends DAOEvent {
-  args: {
-    proposalId: number
-    voter: string
-    support: boolean
-    votes: number
-  }
-}
-
-export interface LoanApprovedEvent extends DAOEvent {
-  args: {
-    loanId: number
-    borrower: string
-    amount: bigint
-    interestRate: number
-  }
-}
-
-export interface YieldDistributedEvent extends DAOEvent {
-  args: {
-    totalYield: bigint
-    memberShare: bigint
-  }
 }

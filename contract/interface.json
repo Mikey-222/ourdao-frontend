@@ -1,0 +1,70 @@
+{
+  "_comment": "OurDAO contract interface — derived from ourdao-contracts. Regenerate with: stellar contract inspect --wasm <path-to-contract.wasm>",
+  "_contract_repo": "https://github.com/ourdao/ourdao-contracts",
+  "_last_verified": "origin/main @ 00b0c62",
+  "reads": {
+    "get_total_members": { "returns": "u32" },
+    "get_active_members": { "returns": "u32" },
+    "get_consensus_threshold": { "returns": "u32" },
+    "get_treasury_balance": { "returns": "i128" },
+    "get_loan_policy": {
+      "returns": {
+        "min_membership_duration": "u64",
+        "membership_contribution": "i128",
+        "max_loan_duration": "u64",
+        "min_interest_rate": "u32",
+        "max_interest_rate": "u32",
+        "cooldown_period": "u64",
+        "max_loan_to_treasury_ratio": "u32",
+        "default_grace_period": "u64",
+        "default_penalty_bps": "u32"
+      }
+    },
+    "get_token": { "returns": "string" },
+    "is_paused": { "returns": "bool" },
+    "get_admins": { "returns": "vec<Address>" },
+    "is_member": { "args": { "addr": "Address" }, "returns": "bool" },
+    "is_admin": { "args": { "addr": "Address" }, "returns": "bool" },
+    "is_eligible_for_loan": { "args": { "addr": "Address" }, "returns": "bool" },
+    "get_member": { "args": { "addr": "Address" }, "returns": "Option<Member>" },
+    "get_pending_yield": { "args": { "addr": "Address" }, "returns": "i128" },
+    "get_stake": { "args": { "addr": "Address" }, "returns": "i128" },
+    "get_loan": { "args": { "id": "u32" }, "returns": "Option<Loan>" },
+    "get_loan_proposal": { "args": { "id": "u32" }, "returns": "Option<LoanProposal>" },
+    "get_treasury_proposal": { "args": { "id": "u32" }, "returns": "Option<TreasuryProposal>" },
+    "calculate_loan_terms": { "args": { "amount": "i128" }, "returns": "LoanTerms" },
+    "calculate_exit_share": { "args": { "addr": "Address" }, "returns": "i128" },
+    "resolve_name": { "args": { "name": "string" }, "returns": "Option<Address>" },
+    "name_of": { "args": { "addr": "Address" }, "returns": "Option<string>" },
+    "get_document": { "args": { "kind": "ProposalKind", "id": "u32" }, "returns": "Option<BytesN<32>>" },
+    "has_voted": { "args": { "kind": "ProposalKind", "proposal_id": "u32", "voter": "Address" }, "returns": "bool" }
+  },
+  "writes": {
+    "register_member": { "args": { "addr": "Address" } },
+    "exit_dao": { "args": { "addr": "Address" } },
+    "claim_rewards": { "args": { "addr": "Address" } },
+    "request_loan": { "args": { "addr": "Address", "amount": "i128" } },
+    "edit_loan_proposal": { "args": { "addr": "Address", "proposal_id": "u32", "new_amount": "i128" } },
+    "vote_on_loan_proposal": { "args": { "addr": "Address", "proposal_id": "u32", "support": "bool" } },
+    "repay_loan": { "args": { "addr": "Address", "loan_id": "u32" } },
+    "mark_loan_defaulted": { "args": { "loan_id": "u32" } },
+    "propose_treasury_withdrawal": { "args": { "addr": "Address", "amount": "i128", "destination": "Address", "reason": "string", "is_private": "bool" } },
+    "vote_on_treasury_proposal": { "args": { "addr": "Address", "proposal_id": "u32", "support": "bool" } },
+    "stake": { "args": { "addr": "Address", "amount": "i128" } },
+    "unstake": { "args": { "addr": "Address", "amount": "i128" } },
+    "register_name": { "args": { "addr": "Address", "name": "string" } },
+    "commit_treasury_vote": { "args": { "addr": "Address", "proposal_id": "u32", "commitment": "BytesN<32>" } },
+    "reveal_treasury_vote": { "args": { "addr": "Address", "proposal_id": "u32", "support": "bool", "salt": "BytesN<32>" } },
+    "attach_document": { "args": { "addr": "Address", "kind": "ProposalKind", "proposal_id": "u32", "content_hash": "BytesN<32>" } },
+    "add_admin": { "args": { "caller": "Address", "admin": "Address" } },
+    "remove_admin": { "args": { "caller": "Address", "admin": "Address" } },
+    "set_consensus_threshold": { "args": { "caller": "Address", "threshold_bps": "u32" } },
+    "set_loan_policy": { "args": { "caller": "Address", "policy": "LoanPolicy" } },
+    "pause": { "args": { "caller": "Address" } },
+    "unpause": { "args": { "caller": "Address" } }
+  },
+  "types": {
+    "ProposalKind": { "variants": ["Loan", "Treasury"] },
+    "MemberStatus": { "variants": ["NonMember", "Active", "Inactive", "Suspended"] }
+  }
+}

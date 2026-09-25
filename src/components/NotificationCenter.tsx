@@ -7,7 +7,7 @@ import {
   type NotificationData,
   type ActivityItem
 } from '@/lib/pushNotifications'
-import { useIsMobile, useResponsiveModal } from '@/lib/responsive'
+import { useIsMobile } from '@/lib/responsive'
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover'
 import {
   Bell, 
@@ -36,7 +36,6 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
   const [filter, setFilter] = useState<'all' | 'unread'>('all')
   
   const isMobile = useIsMobile()
-  const { shouldUseDrawer } = useResponsiveModal()
 
   const {
     notifications,

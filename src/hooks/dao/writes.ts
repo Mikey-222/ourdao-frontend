@@ -2,8 +2,10 @@
 
 import { useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { useCallback, useState } from 'react'
+import React from 'react'
 import toast from 'react-hot-toast'
 import { useWallet } from '@/lib/wallet'
+import { getTransactionUrl } from '@/lib/stellar'
 import { daoWrite, InvokeError, type InvokeResult } from '@/lib/dao-client'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
@@ -51,7 +53,24 @@ function useWriteAction() {
       try {
         const res = await fn(daoWrite(address, signXDR))
         setSuccess(true)
-        toast.success(`${label} confirmed`, { id: toastId })
+        toast.success(
+          React.createElement(
+            'span',
+            null,
+            `${label} confirmed `,
+            React.createElement(
+              'a',
+              {
+                href: getTransactionUrl(res.hash),
+                target: '_blank',
+                rel: 'noopener noreferrer',
+                className: 'underline',
+              },
+              'View transaction'
+            )
+          ),
+          { id: toastId, duration: 8000 }
+        )
         if (invalidates.length) {
           await sleep(RPC_PROPAGATION_DELAY_MS)
           await Promise.all(
@@ -116,43 +135,33 @@ export function useVoting() {
 
 export function useLoanRepayment() {
   const { run, isPending, isSuccess, error, address } = useWriteAction()
-  // repay_loan takes no amount argument — the contract always collects the
-  // full outstanding balance (total_repayment - amount_repaid) in one shot.
-  // AUDIT COMMENT - ISSUE #154:
-  // ❌ OUTDATED: The comment above is misleading. The contract ALSO exposes
-  // repay_loan_partial(borrower, loan_id, amount) which allows partial repayment.
-  // Frontend currently does NOT call repay_loan_partial, limiting borrowers to
-  // full repayment only. This hook needs to be expanded.
-  //
-  // REQUIRED FIX:
-  // 1. Add repayLoanPartial(loanId: number, amount: bigint) hook alongside repayLoan
-  // 2. Use dao-client.repayLoanPartial() with proper i128 encoding
-  // 3. Invalidate same query keys on success: ['loan', loanId], ['userData', address], ['daoStats']
-  // 4. Update comment to describe BOTH entrypoints:
-  //    - repay_loan: full balance repayment in one transaction
-  //    - repay_loan_partial: repay any amount up to outstanding balance
-  // 5. Add client-side validation:
-  //    - Reject amount <= 0
-  //    - Reject amount > outstanding balance (fetch from useDAO read)
-  // 6. Ensure amount is handled as bigint throughout, use parseToken() (not float)
-  //    (prevents precision loss like issue #62)
-  //
-  // SUGGESTED UPGRADES:
-  // - Add optional parameter to repayLoan: repayLoan(loanId, amount?: bigint)
-  //   + If amount provided, call repay_loan_partial
-  //   + If amount omitted, call repay_loan (full balance)
-  //   + Pros: Single hook, backward compatible
-  //   + Cons: Less explicit than two separate hooks
-  // - OR keep separate hooks (current requirement)
-  //   + Pros: Clear intent, no logic branching
-  //   + Cons: Duplicate code
-  const repayLoan = (loanId: number) =>
-    run('Repaying loan', (w) => w.repayLoan(loanId), [
+  // repay_loan collects the entire outstanding balance (total_repayment -
+  // amount_repaid) in one shot; repay_loan_partial takes an explicit amount
+  // which the contract applies to accrued interest first, then principal.
+  const repayLoan = (loanId: number, amount?: bigint) => {
+    if (amount !== undefined) {
+      if (amount <= BigInt(0)) throw new Error('Repayment amount must be greater than zero')
+      return run('Repaying loan', (w) => w.repayLoanPartial(loanId, amount), [
+        ['loan', loanId],
+        ['userData', address],
+        ['daoStats'],
+      ])
+    }
+    return run('Repaying loan', (w) => w.repayLoan(loanId), [
       ['loan', loanId],
       ['userData', address],
       ['daoStats'],
     ])
-  return { repayLoan, isPending, error, isSuccess }
+  }
+  const repayLoanPartial = (loanId: number, amount: bigint) => {
+    if (amount <= BigInt(0)) throw new Error('Repayment amount must be greater than zero')
+    return run('Repaying loan', (w) => w.repayLoanPartial(loanId, amount), [
+      ['loan', loanId],
+      ['userData', address],
+      ['daoStats'],
+    ])
+  }
+  return { repayLoan, repayLoanPartial, isPending, error, isSuccess }
 }
 
 export function useMarkLoanDefaulted() {

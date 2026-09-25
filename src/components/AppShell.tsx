@@ -12,15 +12,15 @@ import { type ReactNode, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  HomeIcon,
-  BanknotesIcon,
-  UsersIcon,
-  BuildingLibraryIcon,
-  ShieldCheckIcon,
-  Cog6ToothIcon,
-  Bars3Icon,
-  ExclamationTriangleIcon,
-} from '@heroicons/react/24/outline'
+  Home,
+  Banknote,
+  Users,
+  Landmark,
+  ShieldCheck,
+  Settings,
+  Menu,
+  TriangleAlert,
+} from 'lucide-react'
 import { ConnectButton } from '@/components/ConnectButton'
 import NotificationCenter from '@/components/NotificationCenter'
 import { OrbitMark } from '@/components/OrbitMark'
@@ -33,18 +33,18 @@ import { cn } from '@/lib/utils'
 interface NavItem {
   name: string
   href: string
-  icon: typeof HomeIcon
+  icon: typeof Home
 }
 
 const NAV_ITEMS: NavItem[] = [
-  { name: 'Dashboard', href: '/dashboard', icon: HomeIcon },
-  { name: 'Loans', href: '/loans', icon: BanknotesIcon },
-  { name: 'Governance', href: '/governance', icon: UsersIcon },
-  { name: 'Treasury', href: '/treasury', icon: BuildingLibraryIcon },
-  { name: 'Privacy', href: '/privacy', icon: ShieldCheckIcon },
+  { name: 'Dashboard', href: '/dashboard', icon: Home },
+  { name: 'Loans', href: '/loans', icon: Banknote },
+  { name: 'Governance', href: '/governance', icon: Users },
+  { name: 'Treasury', href: '/treasury', icon: Landmark },
+  { name: 'Privacy', href: '/privacy', icon: ShieldCheck },
 ]
 
-const ADMIN_ITEM: NavItem = { name: 'Admin', href: '/admin', icon: Cog6ToothIcon }
+const ADMIN_ITEM: NavItem = { name: 'Admin', href: '/admin', icon: Settings }
 
 function isActive(pathname: string | null, href: string): boolean {
   if (!pathname) return false
@@ -127,7 +127,7 @@ export function AppShell({ children }: AppShellProps) {
               className="rounded-lg p-2 text-muted-foreground hover:bg-accent lg:hidden"
               aria-label="Open navigation"
             >
-              <Bars3Icon className="h-6 w-6" />
+              <Menu className="h-6 w-6" />
             </button>
           </SheetTrigger>
           <BrandMark />
@@ -141,7 +141,7 @@ export function AppShell({ children }: AppShellProps) {
 
       {!isContractConfigured() && (
         <div className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300 sm:px-6">
-          <ExclamationTriangleIcon className="h-5 w-5 shrink-0" />
+          <TriangleAlert className="h-5 w-5 shrink-0" />
           <span>
             No contract configured — set{' '}
             <code className="rounded bg-amber-100 px-1 py-0.5 font-mono text-xs dark:bg-amber-900/40">
@@ -154,7 +154,7 @@ export function AppShell({ children }: AppShellProps) {
 
       {stats.indexerStale && (
         <div data-testid="indexer-stale-banner" className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300 sm:px-6">
-          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <TriangleAlert className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
           <span>
             Indexer data is stale{stats.secondsSinceUpdate != null ? ` (last updated ${stats.secondsSinceUpdate}s ago)` : ''}. Displayed off-chain stats and history may be delayed.
           </span>

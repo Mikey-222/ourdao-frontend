@@ -20,6 +20,8 @@ function base64ToBytes(base64: string): Uint8Array {
 
 export async function encryptBytes(data: Uint8Array, password: string): Promise<string> {
   const encoder = new TextEncoder()
+  
+  // Generate salt and IV
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const iv = crypto.getRandomValues(new Uint8Array(12))
 
@@ -124,6 +126,33 @@ export async function uploadToIPFS(
     processedData = fileContent
   }
 
+  // TODO #145: Client-side document POST has no timeout. Server-side Pinata call
+  // (route.ts:30) also unbounded. Gateway read (line 144) is worst of three.
+  // Public gateways can be slow/unresponsive; stalled reads leave viewer spinning
+  // with no error and no retry (no AbortSignal).
+  //
+  // IMPROVEMENT STRATEGY for all three fetches:
+  // 1. Define separate named constants (not shared — uploads and gateway reads
+  //    have different budgets):
+  //    const CLIENT_UPLOAD_TIMEOUT_MS = 30000;    // 30s for reasonable uplinks
+  //    const SERVER_PINATA_TIMEOUT_MS = 15000;    // 15s for server-side Pinata
+  //    const GATEWAY_READ_TIMEOUT_MS = 8000;      // 8s for gateway reads (tightest)
+  //
+  // 2. Apply AbortSignal.timeout() to all three:
+  //    - Here: const signal = AbortSignal.timeout(CLIENT_UPLOAD_TIMEOUT_MS)
+  //    - route.ts:30 Pinata fetch: add { signal: AbortSignal.timeout(...) }
+  //    - Line 144 gateway fetch: const signal = AbortSignal.timeout(GATEWAY_READ_TIMEOUT_MS)
+  //
+  // 3. Distinguish timeout errors from other failures so users see "Gateway stalled"
+  //    (retryable) vs "Decryption failed" (permanent):
+  //    if (error?.name === 'AbortError') {
+  //      throw new Error('Document fetch timed out — gateway may be overloaded')
+  //    }
+  //
+  // 4. Add test cases for timeout paths in test/ipfs.test.ts and
+  //    test/useDocument.test.tsx. Note: Timing out a pin that Pinata actually
+  //    completed leaves an orphaned pin (acceptable, but comment the trade-off).
+  //
   // TS's Uint8Array is generic over its buffer type as of TS 5.7+; BlobPart
   // requires an ArrayBuffer-backed one specifically, so copy into a fresh
   // Uint8Array to satisfy that (no behavior change) — same fix as
@@ -147,6 +176,10 @@ export async function uploadToIPFS(
   }
 }
 
+// TODO #145: IPFS gateway read has no timeout (see uploadToIPFS comment for details).
+// This is the worst of the three fetches — public gateways are routinely slow or
+// unresponsive. Without a timeout, DocumentViewer spins indefinitely with no error.
+// Improvement: Apply AbortSignal.timeout(GATEWAY_READ_TIMEOUT_MS) here.
 // IPFS download with decryption, read straight from the public gateway — no
 // credential needed for reads.
 export async function downloadFromIPFS(

@@ -31,7 +31,7 @@ import {
   type UILoan,
 } from '@/hooks/useDAO'
 import { useNow } from '@/hooks/useNow'
-import { formatToken, formatDate, formatAddress, calculatePercentage } from '@/lib/utils'
+import { formatToken, formatDate, formatAddress, calculatePercentage, parseToken } from '@/lib/utils'
 import { PROPOSAL_STATUS_LABELS, IPFS_GATEWAY } from '@/constants'
 import toast from 'react-hot-toast'
 import { PageHeader } from '@/components/PageHeader'
@@ -42,7 +42,7 @@ export default function LoanDetailsPage() {
   const userData = useUserData()
   const { activeMembers } = useDAOStats()
   const { voteOnProposal, isPending: isVoting } = useVoting()
-  const { repayLoan, isPending: isRepaying } = useLoanRepayment()
+  const { repayLoan, repayLoanPartial, isPending: isRepaying } = useLoanRepayment()
   const { markLoanDefaulted, isPending: isMarkingDefaulted } = useMarkLoanDefaulted()
   const now = useNow()
 
@@ -58,6 +58,8 @@ export default function LoanDetailsPage() {
   const { cid: documentCid, refetch: refetchDocument } = useProposalDocument('Loan', loanId)
   const { attach, isPending: attaching } = useAttachDocument()
   const [cidInput, setCidInput] = useState('')
+  const [repayAmount, setRepayAmount] = useState('')
+  const [repayError, setRepayError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isLoading && !proposal) {
@@ -65,6 +67,17 @@ export default function LoanDetailsPage() {
       router.push('/loans')
     }
   }, [isLoading, proposal, router])
+
+  // Default the repayment input to the full outstanding balance
+  useEffect(() => {
+    if (realLoan) {
+      const out = realLoan.totalRepayment - realLoan.amountRepaid
+      if (out > BigInt(0) && repayAmount === '') {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setRepayAmount(formatToken(out, { displayDecimals: 7 }))
+      }
+    }
+  }, [realLoan, repayAmount])
 
   if (isLoading) {
     return (
@@ -97,7 +110,36 @@ export default function LoanDetailsPage() {
   }
 
   const handleRepayment = async () => {
-    await repayLoan(loanId)
+    const trimmed = repayAmount.trim()
+    if (!trimmed) {
+      setRepayError('Enter an amount')
+      return
+    }
+    if (isNaN(Number(trimmed))) {
+      setRepayError('Enter a valid number')
+      return
+    }
+    const parsed = parseToken(trimmed)
+    if (parsed <= BigInt(0)) {
+      setRepayError('Amount must be greater than zero')
+      return
+    }
+    if (parsed > outstanding) {
+      setRepayError(`Amount exceeds outstanding balance of ${formatToken(outstanding)}`)
+      return
+    }
+    setRepayError(null)
+    try {
+      if (parsed === outstanding) {
+        await repayLoan(loanId)
+      } else {
+        await repayLoanPartial(loanId, parsed)
+      }
+      setRepayAmount('')
+      await Promise.all([refetchLoan(), refetchProposal()])
+    } catch {
+      // toast handled in hook
+    }
   }
 
   const handleMarkDefaulted = async () => {
@@ -157,6 +199,38 @@ export default function LoanDetailsPage() {
     realLoan?.status === 'Active' && now !== null && Math.floor(now / 1000) > realLoan.dueTime
 
   const outstanding = realLoan ? realLoan.totalRepayment - realLoan.amountRepaid : BigInt(0)
+
+  // Estimated interest/principal split for the repayment input.
+  // Mirrors the contract's "interest first, then principal" rule (loans.rs);
+  // stated as an estimate since the exact on-chain split is computed inside
+  // the contract's repay_loan_partial handler and may drift if its formula
+  // changes. All bigint, never float.
+  const totalInterest = realLoan ? realLoan.totalRepayment - realLoan.principal : BigInt(0)
+  const interestPaid = realLoan
+    ? (realLoan.amountRepaid <= totalInterest ? realLoan.amountRepaid : totalInterest)
+    : BigInt(0)
+  const outstandingInterest = totalInterest - interestPaid
+  const parsedRepayAmountForSplit = (() => {
+    const t = repayAmount.trim()
+    if (!t || isNaN(Number(t))) return null
+    const v = parseToken(t)
+    // parseToken returns 0n for invalid; but we already checked NaN, so 0n here is truly zero
+    return v
+  })()
+  const isRepayAmountValidForSplit =
+    parsedRepayAmountForSplit !== null &&
+    parsedRepayAmountForSplit > BigInt(0) &&
+    parsedRepayAmountForSplit <= outstanding
+  const interestPortion =
+    isRepayAmountValidForSplit && parsedRepayAmountForSplit !== null
+      ? (parsedRepayAmountForSplit <= outstandingInterest
+          ? parsedRepayAmountForSplit
+          : outstandingInterest)
+      : BigInt(0)
+  const principalPortion =
+    isRepayAmountValidForSplit && parsedRepayAmountForSplit !== null
+      ? parsedRepayAmountForSplit - interestPortion
+      : BigInt(0)
 
   const votingProgress = calculatePercentage(proposal.votesFor, proposal.votesFor + proposal.votesAgainst)
   const totalVotes = proposal.votesFor + proposal.votesAgainst
@@ -378,8 +452,9 @@ export default function LoanDetailsPage() {
                 <CardHeader>
                   <CardTitle>Loan Repayment</CardTitle>
                   <CardDescription>
-                    Repayment is always the full outstanding balance — the
-                    contract doesn&apos;t support partial repayments.
+                    Enter an amount up to the outstanding balance. Interest is
+                    paid first, then principal — the interest portion is
+                    distributed to active members as yield immediately.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-4">
@@ -387,8 +462,64 @@ export default function LoanDetailsPage() {
                     <span className="text-sm text-muted-foreground">Outstanding balance</span>
                     <span className="text-lg font-semibold text-foreground">{formatToken(outstanding)}</span>
                   </div>
+                  <div className="space-y-2">
+                    <label htmlFor="repay-amount" className="block text-sm font-medium text-foreground">
+                      Repayment amount
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        id="repay-amount"
+                        type="text"
+                        inputMode="decimal"
+                        placeholder="0.00"
+                        value={repayAmount}
+                        onChange={(e) => {
+                          setRepayAmount(e.target.value)
+                          if (repayError) setRepayError(null)
+                        }}
+                        className="flex-1 rounded-lg border border-input px-3 py-2 text-sm transition-colors focus:border-primary-500 focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setRepayAmount(formatToken(outstanding, { displayDecimals: 7 }))
+                          setRepayError(null)
+                        }}
+                      >
+                        Max
+                      </Button>
+                    </div>
+                    {repayError && (
+                      <p className="text-sm text-red-600 dark:text-red-400" role="alert">
+                        {repayError}
+                      </p>
+                    )}
+                  </div>
+                  {isRepayAmountValidForSplit && parsedRepayAmountForSplit !== null && (
+                    <div className="rounded-lg border border-border p-3 space-y-2 bg-blue-50/50 dark:bg-blue-950/20">
+                      <p className="text-sm font-medium text-foreground">Estimated split (interest first)</p>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Interest</span>
+                        <span className="font-medium text-foreground">{formatToken(interestPortion)}</span>
+                      </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Principal</span>
+                        <span className="font-medium text-foreground">{formatToken(principalPortion)}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Estimate — exact split is computed on-chain.</p>
+                      <div className="flex justify-between text-sm pt-2 border-t border-border">
+                        <span className="text-muted-foreground">Remaining balance after</span>
+                        <span className="font-medium text-foreground">{formatToken(outstanding - parsedRepayAmountForSplit)}</span>
+                      </div>
+                    </div>
+                  )}
                   <Button onClick={handleRepayment} disabled={isRepaying} className="w-full">
-                    {isRepaying ? 'Processing...' : 'Repay Full Outstanding Balance'}
+                    {isRepaying
+                      ? 'Processing...'
+                      : parsedRepayAmountForSplit === outstanding
+                        ? 'Repay Full Outstanding Balance'
+                        : 'Repay'}
                   </Button>
                 </CardContent>
               </Card>

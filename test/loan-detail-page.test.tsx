@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { screen, waitFor } from '@testing-library/react'
+import { screen, waitFor, fireEvent } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { renderWithProviders } from './test-utils'
 import LoanDetailsPage from '@/app/(app)/loans/[id]/page'
 
@@ -22,6 +23,9 @@ const mockGetEvents = vi.fn()
 const mockGetStats = vi.fn()
 const mockToastError = vi.fn()
 const mockPush = vi.fn()
+const mockRepayLoan = vi.fn().mockResolvedValue({ hash: 'tx-repay', returnValue: null })
+const mockRepayLoanPartial = vi.fn().mockResolvedValue({ hash: 'tx-partial', returnValue: null })
+const mockMarkLoanDefaulted = vi.fn().mockResolvedValue({ hash: 'tx-default', returnValue: null })
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/loans/1',
@@ -65,7 +69,14 @@ vi.mock('@/lib/dao-client', () => ({
     getLoanPolicy: (...a: unknown[]) => mockGetLoanPolicy(...a),
     isPaused: (...a: unknown[]) => mockIsPaused(...a),
   },
-  daoWrite: () => ({}),
+  daoWrite: () => ({
+    repayLoan: (...a: unknown[]) => mockRepayLoan(...a),
+    repayLoanPartial: (...a: unknown[]) => mockRepayLoanPartial(...a),
+    markLoanDefaulted: (...a: unknown[]) => mockMarkLoanDefaulted(...a),
+    voteOnLoanProposal: vi.fn().mockResolvedValue({ hash: 'tx-vote', returnValue: null }),
+    attachDocument: vi.fn().mockResolvedValue({ hash: 'tx-attach', returnValue: null }),
+  }),
+  InvokeError: class InvokeError extends Error { retryable = false; constructor(m: string) { super(m); this.name = 'InvokeError' } },
 }))
 
 vi.mock('@/lib/backend', () => ({
@@ -127,5 +138,224 @@ describe('LoanDetailsPage', () => {
 
     await waitFor(() => expect(screen.getByText('Loan Not Found')).toBeInTheDocument())
     await waitFor(() => expect(mockToastError).toHaveBeenCalledWith('Loan not found'))
+  })
+
+  describe('loan repayment (partial + full)', () => {
+    const borrower = 'GALICE'
+    const principal = BigInt(1000_0000000) // 1000 tokens
+    const totalRepayment = BigInt(1100_0000000) // 1100 tokens (100 interest)
+    const amountRepaidZero = BigInt(0)
+
+    function approvedProposal() {
+      return {
+        id: 1,
+        borrower,
+        amount: principal,
+        interest_rate: 500,
+        status: 'Approved',
+        phase: 'Voting',
+        for_votes: 5,
+        against_votes: 1,
+        created_at: 1000,
+        editing_period_end: 2000,
+      }
+    }
+
+    function activeLoan(overrides: Record<string, unknown> = {}) {
+      return {
+        id: 1,
+        borrower,
+        principal,
+        interest_rate: 500,
+        total_repayment: totalRepayment,
+        start_time: Math.floor(Date.now() / 1000) - 1000,
+        due_time: Math.floor(Date.now() / 1000) + 86400 * 30,
+        status: 'Active',
+        amount_repaid: amountRepaidZero,
+        ...overrides,
+      }
+    }
+
+    beforeEach(() => {
+      mockRepayLoan.mockClear()
+      mockRepayLoanPartial.mockClear()
+      mockMarkLoanDefaulted.mockClear()
+    })
+
+    it('borrower sees an amount input defaulting to full outstanding balance', async () => {
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      mockGetLoan.mockResolvedValue(activeLoan())
+
+      renderWithProviders(<LoanDetailsPage />)
+
+      await waitFor(() => expect(screen.getByText('Loan Repayment')).toBeInTheDocument())
+      const input = screen.getByLabelText(/Repayment amount/i) as HTMLInputElement
+      // default is formatted full outstanding (1100 tokens) at 7 display decimals
+      expect(input.value).toBe('1100')
+      expect(screen.getByText('Outstanding balance')).toBeInTheDocument()
+      expect(screen.getAllByText('1100').length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('input rejects zero and negative values with a visible message', async () => {
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      mockGetLoan.mockResolvedValue(activeLoan())
+
+      renderWithProviders(<LoanDetailsPage />)
+      await waitFor(() => expect(screen.getByLabelText(/Repayment amount/i)).toBeInTheDocument())
+
+      const input = screen.getByLabelText(/Repayment amount/i) as HTMLInputElement
+      const repayBtn = screen.getByRole('button', { name: /Repay/ })
+
+      // zero
+      fireEvent.change(input, { target: { value: '0' } })
+      await userEvent.click(repayBtn)
+      expect(await screen.findByText('Amount must be greater than zero')).toBeInTheDocument()
+      expect(mockRepayLoan).not.toHaveBeenCalled()
+      expect(mockRepayLoanPartial).not.toHaveBeenCalled()
+
+      // negative
+      fireEvent.change(input, { target: { value: '-5' } })
+      await userEvent.click(repayBtn)
+      expect(await screen.findByText('Amount must be greater than zero')).toBeInTheDocument()
+      expect(mockRepayLoan).not.toHaveBeenCalled()
+      expect(mockRepayLoanPartial).not.toHaveBeenCalled()
+    })
+
+    it('input rejects amount exceeding outstanding balance', async () => {
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      mockGetLoan.mockResolvedValue(activeLoan())
+
+      renderWithProviders(<LoanDetailsPage />)
+      await waitFor(() => expect(screen.getByLabelText(/Repayment amount/i)).toBeInTheDocument())
+
+      const input = screen.getByLabelText(/Repayment amount/i) as HTMLInputElement
+      const repayBtn = screen.getByRole('button', { name: /Repay/ })
+
+      fireEvent.change(input, { target: { value: '2000' } }) // >1100
+      await userEvent.click(repayBtn)
+      expect(await screen.findByText(/Amount exceeds outstanding balance/)).toBeInTheDocument()
+      expect(mockRepayLoan).not.toHaveBeenCalled()
+      expect(mockRepayLoanPartial).not.toHaveBeenCalled()
+    })
+
+    it('shows interest/principal split before signing (estimate)', async () => {
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      mockGetLoan.mockResolvedValue(activeLoan())
+
+      renderWithProviders(<LoanDetailsPage />)
+      await waitFor(() => expect(screen.getByLabelText(/Repayment amount/i)).toBeInTheDocument())
+
+      const input = screen.getByLabelText(/Repayment amount/i) as HTMLInputElement
+      // 50 tokens < outstandingInterest (100), so all interest
+      fireEvent.change(input, { target: { value: '50' } })
+
+      expect(await screen.findByText(/Estimated split/)).toBeInTheDocument()
+      expect(screen.getAllByText('Interest').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('Principal').length).toBeGreaterThanOrEqual(1)
+      // 50 interest, 0 principal
+      expect(screen.getAllByText('50').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getAllByText('0').length).toBeGreaterThanOrEqual(1)
+      expect(screen.getByText(/Estimate — exact split is computed on-chain/)).toBeInTheDocument()
+    })
+
+    it('partial repayment splits interest first: large partial covers interest then principal', async () => {
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      mockGetLoan.mockResolvedValue(activeLoan())
+
+      renderWithProviders(<LoanDetailsPage />)
+      await waitFor(() => expect(screen.getByLabelText(/Repayment amount/i)).toBeInTheDocument())
+
+      const input = screen.getByLabelText(/Repayment amount/i) as HTMLInputElement
+      // 200 tokens: 100 interest + 100 principal
+      fireEvent.change(input, { target: { value: '200' } })
+
+      await waitFor(() => expect(screen.getByText(/Estimated split/)).toBeInTheDocument())
+      // interest 100, principal 100
+      const interestValues = screen.getAllByText('100')
+      expect(interestValues.length).toBeGreaterThanOrEqual(1)
+    })
+
+    it('borrower can repay less than full outstanding via partial path and loan remains active with updated outstanding', async () => {
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      // first call returns initial loan, second call after refetch returns updated loan
+      mockGetLoan
+        .mockResolvedValueOnce(activeLoan())
+        .mockResolvedValueOnce(activeLoan({ amount_repaid: BigInt(50_0000000) }))
+
+      renderWithProviders(<LoanDetailsPage />)
+      await waitFor(() => expect(screen.getByLabelText(/Repayment amount/i)).toBeInTheDocument())
+
+      const input = screen.getByLabelText(/Repayment amount/i) as HTMLInputElement
+      const repayBtn = screen.getByRole('button', { name: /Repay/ })
+
+      fireEvent.change(input, { target: { value: '50' } })
+      await userEvent.click(repayBtn)
+
+      await waitFor(() => expect(mockRepayLoanPartial).toHaveBeenCalled())
+      expect(mockRepayLoanPartial).toHaveBeenCalledWith(1, BigInt(50_0000000))
+      expect(mockRepayLoan).not.toHaveBeenCalled()
+
+      // after refetch, loan should still be Active and outstanding updated to 1050
+      await waitFor(() => expect(screen.getByText('Active')).toBeInTheDocument())
+      // outstanding display should now be 1050 (1100-50)
+      await waitFor(() => expect(screen.getByText('1050')).toBeInTheDocument())
+    })
+
+    it('full repayment uses the full-balance path and still works in one click', async () => {
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      mockGetLoan.mockResolvedValue(activeLoan())
+
+      renderWithProviders(<LoanDetailsPage />)
+      await waitFor(() => expect(screen.getByLabelText(/Repayment amount/i)).toBeInTheDocument())
+
+      const repayBtn = screen.getByRole('button', { name: /Repay Full Outstanding Balance/ })
+      expect(repayBtn).toBeInTheDocument()
+
+      await userEvent.click(repayBtn)
+
+      await waitFor(() => expect(mockRepayLoan).toHaveBeenCalledWith(1))
+      expect(mockRepayLoanPartial).not.toHaveBeenCalled()
+    })
+
+    it('Max button fills the full outstanding balance', async () => {
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      mockGetLoan.mockResolvedValue(activeLoan())
+
+      renderWithProviders(<LoanDetailsPage />)
+      await waitFor(() => expect(screen.getByLabelText(/Repayment amount/i)).toBeInTheDocument())
+
+      const input = screen.getByLabelText(/Repayment amount/i) as HTMLInputElement
+      fireEvent.change(input, { target: { value: '10' } })
+      expect(input.value).toBe('10')
+
+      const maxBtn = screen.getByRole('button', { name: 'Max' })
+      await userEvent.click(maxBtn)
+      expect(input.value).toBe('1100')
+    })
+
+    it('handles bigint via parseToken without float precision loss', async () => {
+      // Use a value above Number.MAX_SAFE_INTEGER / 1e7 to prove bigint path
+      const hugePrincipal = BigInt(Number.MAX_SAFE_INTEGER) * BigInt(100)
+      const hugeTotal = hugePrincipal + BigInt(100_0000000)
+      mockGetLoanProposal.mockResolvedValue(approvedProposal())
+      mockGetLoan.mockResolvedValue(
+        activeLoan({ principal: hugePrincipal, total_repayment: hugeTotal, amount_repaid: BigInt(0) })
+      )
+
+      renderWithProviders(<LoanDetailsPage />)
+      await waitFor(() => expect(screen.getByLabelText(/Repayment amount/i)).toBeInTheDocument())
+
+      const input = screen.getByLabelText(/Repayment amount/i) as HTMLInputElement
+      // The default formatted huge value should be present and parseable
+      expect(input.value).not.toBe('')
+      // typing a huge value and submitting should call partial with bigint
+      fireEvent.change(input, { target: { value: '1' } })
+      const repayBtn = screen.getByRole('button', { name: /Repay/ })
+      await userEvent.click(repayBtn)
+      await waitFor(() => expect(mockRepayLoanPartial).toHaveBeenCalled())
+      const calledAmount = mockRepayLoanPartial.mock.calls[0][1] as bigint
+      expect(typeof calledAmount).toBe('bigint')
+      expect(calledAmount).toBe(BigInt(1_0000000))
+    })
   })
 })

@@ -104,6 +104,47 @@ jobs:
       - run: npm ci
       - run: npm run depcheck
 
+  # TODO #143: Contract ABI drift detection is missing. Once the interface
+  # artifact from P2-012a exists, nothing in CI verifies it against the
+  # contract. All jobs (lint, typecheck, test, build) pass against a stale
+  # ABI because none can see the contract. Failure surfaces only at user
+  # signature time, not in CI.
+  #
+  # IMPROVEMENT STRATEGY:
+  # 1. Add a CI job that:
+  #    a) Checks out a pinned ourdao-contracts ref (e.g., via submodule or explicit clone)
+  #    b) Regenerates the interface artifact with the Stellar CLI
+  #    c) Diffs against the committed artifact in this repo
+  #    d) Fails on mismatch with a message naming the regeneration command
+  #
+  # 2. Example job skeleton:
+  #    contract-abi-check:
+  #      name: Contract ABI drift detection
+  #      runs-on: ubuntu-latest
+  #      steps:
+  #        - uses: actions/checkout@v7
+  #        - name: Install Stellar CLI
+  #          run: ...  # Install soroban-cli at the pinned version
+  #        - name: Regenerate interface from pinned contract
+  #          run: |
+  #            cd ourdao-contracts/  # or clone it
+  #            soroban contract build
+  #            soroban contract bindings typescript ...
+  #        - name: Compare against committed artifact
+  #          run: |
+  #            diff -u src/lib/contract-interface.ts generated/contract-interface.ts \
+  #              && echo "Contract ABI matches" \
+  #              || (echo "ERROR: Contract ABI has drifted. Run: npm run regenerate-contract-interface" && exit 1)
+  #
+  # 3. Run on both pull requests and a schedule (e.g., daily) so contract-side
+  #    drift surfaces without waiting for a frontend PR.
+  #
+  # 4. Consider making the scheduled run non-blocking and open an issue instead
+  #    so a contract outage doesn't block unrelated frontend work.
+  #
+  # Note: This depends on ourdao-contracts repo, so it fails for network/ref
+  # reasons unrelated to the PR. Keep it scoped so such failures don't cascade.
+
   # Compares the client JS/CSS actually shipped (.next/static) against the
   # latest baseline captured from main, so a PR's effect on bundle size is
   # visible instead of invisible until someone notices the app got slower.

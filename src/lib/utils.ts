@@ -75,6 +75,13 @@ export function formatAddress(address: string, startLength: number = 6, endLengt
   return `${address.slice(0, startLength)}...${address.slice(-endLength)}`
 }
 
+// Format a basis-points consensus threshold (e.g. 5150 → "51.50%").
+// Trims trailing zeros so whole-number thresholds stay clean ("51%", not "51.00%").
+export function formatThreshold(basisPoints: number): string {
+  const pct = basisPoints / 100
+  return pct % 1 === 0 ? `${pct}%` : `${pct.toFixed(2)}%`
+}
+
 // Calculate percentage for voting results
 export function calculatePercentage(votes: number, totalVotes: number): number {
   if (totalVotes === 0) return 0
@@ -132,6 +139,14 @@ export async function generateCommitment(support: boolean): Promise<{
   const commitment = new Uint8Array(hashBuffer)
 
   return { commitment, salt }
+}
+
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 Bytes'
+  const k = 1024
+  const sizes = ['Bytes', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
 const SALT_STORAGE_KEY = 'ourdao-commit-salt'

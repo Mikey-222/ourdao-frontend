@@ -105,7 +105,17 @@ export async function read<T = unknown>(
   if (!isContractConfigured()) return null
 
   const contract = new Contract(CONTRACT_ID)
-  // Simulation needs a source account but never touches it on-chain.
+  // TODO #146: Simulation needs a source account but never touches it on-chain.
+  // Currently generates a throwaway Ed25519 keypair on every read (elliptic-curve
+  // work repeated per refetch interval). This should be replaced with a fixed,
+  // well-known public key constant (e.g., all-zeros address), since simulation
+  // never validates the signature or checks the account state.
+  //
+  // Improvement suggestion: Create a module-level constant like:
+  // const SIMULATION_SOURCE_KEY = '0'.repeat(56); // or documented placeholder address
+  // Then reuse it: const source = new Account(SIMULATION_SOURCE_KEY, '0');
+  // This eliminates the per-read cryptographic overhead while maintaining identical
+  // simulation results (the SDK's simulateTransaction doesn't authenticate sources).
   const source = new Account(Keypair.random().publicKey(), '0')
   const tx = new TransactionBuilder(source, {
     fee: BASE_FEE,
@@ -322,49 +332,12 @@ export function daoWrite(
       send('vote_on_loan_proposal', sc.addr(address), sc.u32(proposalId), sc.bool(support)),
     repayLoan: (loanId: number) =>
       send('repay_loan', sc.addr(address), sc.u32(loanId)),
-    /* AUDIT COMMENT - ISSUE #154:
-     * ❌ MISSING: repay_loan_partial is NOT exposed
-     *
-     * CURRENT STATUS:
-     * - daoWrite only exposes repayLoan (full balance repayment)
-     * - Contract also has pub fn repay_loan_partial(env, borrower, loan_id, amount)
-     * - Frontend never calls repay_loan_partial
-     * - Borrowers can only repay full balance, not instalments
-     *
-     * REQUIRED ADDITION:
-     * Add this binding after repayLoan:
-     * ```
-     * repayLoanPartial: (loanId: number, amount: bigint | number) =>
-     *   send('repay_loan_partial', sc.addr(address), sc.u32(loanId), sc.i128(amount)),
-     * ```
-     *
-     * IMPLEMENTATION NOTES:
-     * - amount parameter: use sc.i128() to encode as signed 128-bit integer
-     * - Borrower address (address) is implicit via sc.addr(address)
-     * - Match parameter order in contract: borrower, loan_id, amount
-     * - Handle as bigint end-to-end (use parseToken, not float arithmetic)
-     * - Add corresponding hook in src/hooks/dao/writes.ts
-     *
-     * CONTRACT BEHAVIOR (per ourdao-contracts/contracts/dao/src/loans.rs):
-     * - repay_loan: collects full outstanding balance (interest + principal)
-     * - repay_loan_partial(amount):
-     *   - Accepts any amount > 0 and <= outstanding_balance
-     *   - Interest is applied first (distributed as yield immediately)
-     *   - Remainder reduces principal
-     *   - Allows multiple instalments per loan
-     * - Contract rejects: amount <= 0 or amount > outstanding_balance
-     *
-     * SUGGESTED UPGRADES:
-     * - Consider optional parameter in repayLoan instead of separate binding
-     *   + repayLoan(loanId, amount?: bigint) { if amount call _partial else call _full }
-     *   + Pros: Single hook, backward compatible
-     *   + Cons: Hidden logic branch, less explicit
-     * - OR keep separate (current requirement) for clarity
-     * - Add client-side validation before calling:
-     *   + Fetch outstanding balance from get_loan()
-     *   + Reject amount <= 0 with clear error
-     *   + Reject amount > outstanding_balance with clear error
-     */
+    // Partial repayment — amount is applied to accrued interest first, then
+    // principal; the interest portion is distributed to active members as
+    // yield immediately (see contracts/dao/src/loans.rs). Rejects amount
+    // <= 0 or amount > outstanding balance.
+    repayLoanPartial: (loanId: number, amount: bigint | number) =>
+      send('repay_loan_partial', sc.addr(address), sc.u32(loanId), sc.i128(amount)),
     // Permissionless: the contract takes no caller argument (anyone can
     // trigger this once a loan is overdue past its grace period).
     markLoanDefaulted: (loanId: number) => send('mark_loan_defaulted', sc.u32(loanId)),

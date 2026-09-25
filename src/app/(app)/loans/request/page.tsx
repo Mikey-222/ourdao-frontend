@@ -7,10 +7,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import Link from 'next/link'
 import {
   BanknotesIcon,
-  ArrowLeftIcon,
   CheckCircleIcon,
   ExclamationTriangleIcon,
-  EyeSlashIcon,
   LockClosedIcon,
   DocumentIcon
 } from '@heroicons/react/24/outline'

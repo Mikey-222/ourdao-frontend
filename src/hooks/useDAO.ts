@@ -10,8 +10,10 @@
 //     admin reads
 //   - src/hooks/dao/writes.ts  — write actions (shared useWriteAction plumbing
 //     plus every mutation hook)
-// See useDAO.tsx (issue #115) for the pre-existing duplicate-file situation —
-// untouched here, out of scope for this split.
+// Former duplicate src/hooks/useDAO.tsx (issue #115) has been removed — this
+// barrel is the single canonical entry point. Its former exclusive fixes
+// (explorer-link toast, refetchIntervalInBackground: false) are now ported
+// into the split modules above.
 export * from '@/lib/dao-mappers'
 export * from './dao/enumeration'
 export * from './dao/reads'

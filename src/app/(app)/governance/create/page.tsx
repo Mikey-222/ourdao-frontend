@@ -11,6 +11,7 @@ import {
   CardDescription,
 } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import Link from 'next/link'
 import {
   DocumentPlusIcon,
   EyeSlashIcon,
@@ -58,6 +59,14 @@ export default function CreateProposalPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    // Private voting is disabled until commit/reveal UI exists — a private
+    // proposal is currently unvotable by anyone (see /privacy). Guard even if
+    // the checkbox is bypassed via devtools.
+    if (form.isPrivate) {
+      toast.error('Private voting is disabled until commit/reveal voting is implemented. See /privacy.')
+      return
+    }
+
     const amount = parseToken(form.amount)
     if (amount <= BigInt(0)) {
       toast.error('Enter a valid amount greater than zero')
@@ -73,7 +82,7 @@ export default function CreateProposalPage() {
     }
 
     try {
-      await propose(amount, form.destination.trim(), form.reason.trim(), form.isPrivate)
+      await propose(amount, form.destination.trim(), form.reason.trim(), false)
       router.push('/governance')
     } catch {
       /* toast handled in hook */
@@ -146,22 +155,29 @@ export default function CreateProposalPage() {
                 />
               </div>
 
-              <div className="flex items-start gap-3 rounded-lg border border-border p-4">
+              <div className="flex items-start gap-3 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 opacity-75">
                 <input
                   id="proposal-private"
                   type="checkbox"
-                  checked={form.isPrivate}
-                  onChange={(e) => set('isPrivate', e.target.checked)}
-                  className="mt-0.5 h-4 w-4 rounded border-input text-primary-600 focus:ring-primary-500"
+                  checked={false}
+                  disabled
+                  aria-disabled="true"
+                  onChange={() => {}}
+                  className="mt-0.5 h-4 w-4 rounded border-input text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-50"
                 />
                 <label htmlFor="proposal-private" className="flex flex-col gap-0.5 text-sm">
                   <span className="flex items-center gap-1.5 font-medium text-foreground">
                     <EyeSlashIcon className="h-4 w-4" />
-                    Private voting (commit-reveal)
+                    Private voting (commit-reveal) — disabled
                   </span>
                   <span className="text-muted-foreground">
-                    Members submit a hidden vote first, then reveal it — no one
-                    sees the tally influence others while voting is open.
+                    Commit/reveal voting is designed but not yet usable: the contract does not
+                    enforce a commit window and this app has no commit/reveal UI, so a private
+                    proposal is currently unvotable by anyone. Disabled until those land — see{' '}
+                    <Link href="/privacy" className="text-blue-600 dark:text-blue-400 hover:underline">
+                      /privacy
+                    </Link>{' '}
+                    for details and tracking links.
                   </span>
                 </label>
               </div>

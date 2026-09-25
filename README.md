@@ -29,6 +29,7 @@ This repository is one of three that make up OurDAO:
 - [Routes](#routes)
 - [Architecture](#architecture)
 - [Where the Stellar integration lives](#where-the-stellar-integration-lives)
+- [Contract interface artifact](#contract-interface-artifact)
 - [Theming](#theming)
 - [Scripts](#scripts)
 - [Testing](#testing)
@@ -59,7 +60,7 @@ All config is env-driven with public-testnet defaults (see `.env.example`):
 | `NEXT_PUBLIC_NETWORK_PASSPHRASE` | Network passphrase | testnet |
 | `NEXT_PUBLIC_IPFS_GATEWAY` | Gateway for reading document content hashes (no credential needed) | Pinata |
 | `PINATA_JWT` | **Server-only** Pinata credential for pinning uploaded documents — read by `src/app/api/documents/route.ts`, never exposed to the client | _(empty → uploads fail with a visible error)_ |
-| `NEXT_PUBLIC_BACKEND_URL` | [`ourdao-backend`](https://github.com/ourdao/ourdao-backend) indexer/API (loan history, notifications, admin log, events) | `http://localhost:4000` |
+| `NEXT_PUBLIC_BACKEND_URL` | [`ourdao-backend`](https://github.com/ourdao/ourdao-backend) indexer/API (loan history, notifications, admin log, events) | _(empty → on-chain-only, no backend)_ — set to `http://localhost:4000` for local dev (see `.env.example`)_ |
 | `NEXT_PUBLIC_SITE_URL` | Public site origin, no trailing slash — used as `metadataBase` so Open Graph/Twitter image URLs resolve to an absolute address | `http://localhost:3000` |
 
 Without a `NEXT_PUBLIC_CONTRACT_ID` the UI runs and renders, but on-chain reads/writes are disabled until you point it at a deployed contract. Without a reachable backend, everything backend-derived (loan history, notifications, activity/admin logs) degrades to empty rather than erroring — see `src/lib/backend.ts`. Without `PINATA_JWT`, document uploads fail with a clear error rather than uploading nowhere silently.
@@ -114,6 +115,14 @@ Data flows through [TanStack Query](https://tanstack.com/query) throughout: `use
 | `src/components/ConnectButton.tsx` | Freighter connect/disconnect UI |
 | `src/hooks/useDAO.ts` | React Query hooks the pages consume |
 
+## Contract interface artifact
+
+The frontend hard-codes argument shapes, enum variants, and event symbols for a specific version of the Soroban contract. `contract/interface.json` pins which version that is by recording the contract's read/write surface alongside the `ourdao-contracts` commit SHA it was verified against.
+
+- **What it is:** A JSON summary of every public entrypoint and enum the contract exposes. It is not the raw WASM or IDL — it is the human-readable shape the frontend depends on.
+- **How to regenerate:** After updating the contract, run `stellar contract inspect --wasm <path-to-contract.wasm>` (or the equivalent `soroban contract inspect` output) and update this file.
+- **Why it matters:** A contract redeploy that renames a variant or reorders arguments silently breaks the frontend — this file makes the expected surface explicit and reviewable.
+
 ## Theming
 
 Light/dark is handled by [`next-themes`](https://github.com/pacocoursey/next-themes) (`ThemeProvider` in `src/components/providers.tsx`, toggled via `src/components/ThemeToggle.tsx` in the header), following the system preference by default and persisting a manual choice in `localStorage`. Colors are Tailwind v4 `@theme` tokens defined in `src/app/globals.css` — a `.dark` class override block flips the semantic set (`background`, `foreground`, `card`, `muted`, `border`, etc.) that `src/components/ui/*` is built against.
@@ -152,8 +161,18 @@ Running on Next.js 16 (Turbopack by default) + React 19.2.
 - **No custody.** The frontend never holds a private key — every signature happens inside the Freighter extension, in the user's own browser context. `src/lib/wallet.tsx` only ever receives a signed transaction XDR back, never a key.
 - **Read-only degradation, not silent failure.** Without a configured contract id or a reachable backend, the UI runs in an explicit "not configured" / empty state rather than throwing — see [Configuration](#configuration).
 - **Error boundaries.** `error.tsx` (route-segment) and `global-error.tsx` (root-layout-level) catch uncaught render errors and offer a retry instead of the previous behavior, where any single uncaught error anywhere in the tree would take down the entire client-side app with no recovery short of a hard reload.
+- **HTTP security headers & CSP.** `next.config.ts` sets `poweredByHeader: false` (no `X-Powered-By`) and a `headers()` function that applies on every response:
+  - `Content-Security-Policy` — enforced (not report-only). `default-src 'self'`, `script-src 'self' 'unsafe-inline'` (Next.js hydration needs it — a per-request nonce via middleware would be stricter but isn't achievable with a static `headers()` alone; tradeoff is documented in `next.config.ts`), `style-src 'self' 'unsafe-inline'`, `img-src 'self' data: blob: https:`, `font-src 'self' data:`, `connect-src 'self'` plus the RPC / backend / IPFS gateway origins derived from the same `NEXT_PUBLIC_SOROBAN_RPC_URL`, `NEXT_PUBLIC_BACKEND_URL`, `NEXT_PUBLIC_IPFS_GATEWAY` the app reads at runtime (so non-default deployments don't break), plus `ws:`/`wss:` for HMR, `frame-ancestors 'none'`, `object-src 'none'`, etc. Freighter needs no extra scheme — it injects `window.freighterApi` via the page's JS context and `postMessage`, verified with a real wallet connect/sign/submit flow and no CSP violations in the console across every route.
+  - `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`
+  - `X-Content-Type-Options: nosniff`
+  - `Referrer-Policy: strict-origin-when-cross-origin` — prevents the member address in `/loans/[id]` leaking in the `Referer` to external links
+  - `X-Frame-Options: DENY` + `frame-ancestors 'none'` (CSP) — no framing, anti-clickjacking for the wallet-connected flow
+  - `Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=(), browsing-topics=()`
+  - `Cross-Origin-Opener-Policy: same-origin`
+  Verified via `curl -I` / external header checker (include output in PR). CSP is the layer that limits what an injected script can load and where it can exfiltrate, even though signing itself stays inside Freighter.
 - **Dependency hygiene.** A critical Next.js RCE and several other npm audit findings were patched. `ipfs-http-client` — previously the only dependency with an allowlisted finding — has been removed entirely along with its tree, so its `audit-ci.jsonc` entries are gone too. The rest is enforced automatically rather than tracked by hand: a separate `audit` job in CI (`.github/workflows/ci.yml`) runs `audit-ci` (config: `audit-ci.jsonc`) on every PR at the moderate-and-above threshold, so a new advisory is caught the day it lands instead of at the next manual review. It's a non-blocking job (visible as a warning, doesn't fail the run) since a fresh advisory affects every open PR at once, not just the one that happens to trigger it. Any future allowlist entry is scoped by exact GHSA id with an expiry date, after which it starts failing again until someone deliberately re-reviews and extends it or the dependency is fixed/replaced — see the comments in `audit-ci.jsonc`. One unrelated, unallowlisted finding remains in `nanoid` via `postcss` (pulled in by `next`/`@tailwindcss/postcss`). [Dependabot](.github/dependabot.yml) opens security-update PRs automatically as advisories get patched upstream, and batches routine (non-security) version bumps into a weekly grouped PR so they don't flood the queue — see [CONTRIBUTING.md](./CONTRIBUTING.md)'s note on unrelated dependency bumps.
 - **Server-only credentials.** `PINATA_JWT` (document pinning) is read only in `src/app/api/documents/route.ts`, a server-side route handler — never in a `NEXT_PUBLIC_`-prefixed variable, which Next.js would otherwise inline into the client bundle.
+- **Privacy claims are audited.** `/privacy` separates what's enforced today from what's designed but not yet delivered (commit-reveal phase separation and commit/reveal UI are still pending in `ourdao-contracts` and this repo; private proposals are currently unvotable and the create form disables that option rather than offering an uncompletable flow). See that page and its tracking links. Once the contract/client fixes land, the page will be updated — noted in the PR so it isn't forgotten.
 
 ## Roadmap
 

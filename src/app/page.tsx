@@ -3,7 +3,6 @@
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 import { ConnectButton } from '@/components/ConnectButton'
 import Link from 'next/link'
 import { getContractUrl } from '@/lib/stellar'
@@ -18,7 +17,6 @@ import {
   Globe,
   Zap,
   Lock,
-  DollarSign,
   BarChart3,
   Menu,
   X

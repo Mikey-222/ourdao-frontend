@@ -15,6 +15,7 @@ export function useLoanProposals() {
     queryKey: ['backendStats'],
     queryFn: () => backend.getStats(),
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   })
   const count = stats?.totalLoanProposals ?? 0
 
@@ -98,6 +99,7 @@ export function useLoan(id: number, enabled: boolean) {
       return raw ? mapLoan(raw) : null
     },
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   })
   return { loan: data ?? null, isLoading, refetch }
 }
@@ -108,6 +110,7 @@ export function useTreasuryProposals() {
     queryKey: ['backendStats'],
     queryFn: () => backend.getStats(),
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   })
   const count = stats?.totalTreasuryProposals ?? 0
 
@@ -143,6 +146,7 @@ export function useStake(): bigint {
     enabled: !!address && isContractConfigured(),
     queryFn: () => daoRead.getStake(address!),
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   })
   return asBigInt(data)
 }
@@ -185,6 +189,7 @@ export function useAdminLog(limit = 50) {
     queryKey: ['adminLog', limit],
     queryFn: () => backend.getAdminLog(limit),
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
   })
   const entries = useMemo(() => (data ?? []).map(toAdminLogEntry), [data])
   return { entries, isLoading }
