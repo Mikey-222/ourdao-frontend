@@ -17,9 +17,9 @@ import {
   useAdminActions,
   useAdminLog,
 } from '@/hooks/useDAO'
-import { formatToken, formatAddress, formatDate, formatThreshold } from '@/lib/utils'
+import { formatToken, formatDate } from '@/lib/utils'
+import { formatStellarAddress, isStellarAddress } from '@/lib/stellar'
 import { LoadingSpinner } from '@/components/ui/skeleton'
-import { isStellarAddress } from '@/lib/stellar'
 import { PageHeader } from '@/components/PageHeader'
 
 type Tab = 'overview' | 'governance' | 'activity'
@@ -197,7 +197,7 @@ function GovernanceTab({ stats }: { stats: ReturnType<typeof useDAOStats> }) {
   const submitAddAdmin = async (e: FormEvent) => {
     e.preventDefault()
     if (!trimmedNewAdmin || !isStellarAddress(trimmedNewAdmin)) return
-    if (!window.confirm(`Add ${formatAddress(trimmedNewAdmin)} as an admin? This grants full admin privileges.`)) return
+    if (!window.confirm(`Add ${formatStellarAddress(trimmedNewAdmin)} as an admin? This grants full admin privileges.`)) return
     await addAdmin(trimmedNewAdmin)
     setNewAdmin('')
     refetch()
@@ -222,10 +222,10 @@ function GovernanceTab({ stats }: { stats: ReturnType<typeof useDAOStats> }) {
           {isLoading && <div className="px-6 py-4 text-sm text-muted-foreground">Loading…</div>}
           {admins.map((addr) => (
             <div key={addr} className="px-6 py-3 flex items-center justify-between">
-              <span className="font-mono text-sm text-foreground">{formatAddress(addr)}</span>
+              <span className="font-mono text-sm text-foreground">{formatStellarAddress(addr)}</span>
               <button
                 onClick={async () => {
-                  if (!window.confirm(`Remove admin ${formatAddress(addr)}? This action requires a remaining admin to re-add them.`)) return
+                  if (!window.confirm(`Remove admin ${formatStellarAddress(addr)}? This action requires a remaining admin to re-add them.`)) return
                   await removeAdmin(addr)
                   refetch()
                 }}

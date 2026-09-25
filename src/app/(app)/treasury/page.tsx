@@ -26,8 +26,9 @@ import {
   useHasVoted,
   type UITreasuryProposal,
 } from '@/hooks/useDAO'
-import { formatToken, formatAddress, parseToken } from '@/lib/utils'
-import { PROPOSAL_STATUS_LABELS, PROPOSAL_STATUS_AWAITING_FUNDS } from '@/constants'
+import { formatToken, parseToken } from '@/lib/utils'
+import { formatStellarAddress } from '@/lib/stellar'
+import { PROPOSAL_STATUS_LABELS } from '@/constants'
 
 function TreasuryProposalRow({
   proposal: p,
@@ -55,7 +56,7 @@ function TreasuryProposalRow({
             )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {formatToken(p.amount)} → {formatAddress(p.recipient)}
+            {formatToken(p.amount)} → {formatStellarAddress(p.recipient)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             For {p.votesFor} · Against {p.votesAgainst}
