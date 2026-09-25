@@ -28,7 +28,7 @@ export function useDocumentContent(
   const hasAccess = canAccessDocument(doc, userAddress, userRoles)
 
   const query = useQuery({
-    queryKey: ['document', doc.hash],
+    queryKey: ['document', doc.hash, userAddress],
     queryFn: () => downloadFromIPFS(doc.hash, false),
     enabled: hasAccess && !doc.encrypted,
   })

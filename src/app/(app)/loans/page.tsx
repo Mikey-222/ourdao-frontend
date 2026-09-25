@@ -24,7 +24,8 @@ import {
   type UILoanProposal,
 } from '@/hooks/useDAO'
 import { useNow } from '@/hooks/useNow'
-import { formatToken, formatDate, formatAddress, calculatePercentage } from '@/lib/utils'
+import { formatToken, formatDate, calculatePercentage } from '@/lib/utils'
+import { formatStellarAddress } from '@/lib/stellar'
 import { PROPOSAL_STATUS_LABELS } from '@/constants'
 import { PageHeader } from '@/components/PageHeader'
 import type { UserData } from '@/types/dao'
@@ -119,7 +120,7 @@ function LoanProposalCard({
                 )}
               </div>
               <CardDescription>
-                By {formatAddress(proposal.borrower)} • Created {formatDate(proposal.creationTime)}
+                By {formatStellarAddress(proposal.borrower)} • Created {formatDate(proposal.creationTime)}
               </CardDescription>
             </div>
           </div>

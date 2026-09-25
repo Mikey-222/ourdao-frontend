@@ -289,7 +289,7 @@ export default function LoanDetailsPage() {
 
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Borrower</span>
-                  <span className="font-medium text-foreground">{formatAddress(proposal.borrower)}</span>
+                  <span className="font-medium text-foreground">{formatStellarAddress(proposal.borrower)}</span>
                 </div>
 
                 {/* Voting Progress */}

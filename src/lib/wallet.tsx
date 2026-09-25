@@ -117,6 +117,9 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
       const newAddr = params.address
       if (newAddr && newAddr !== addressRef.current) {
         setAddress(newAddr)
+        // Clear all cached query data so no previous account's results linger,
+        // and trigger explicit invalidations so active subscribers refetch.
+        queryClient.clear()
         queryClient.invalidateQueries({ queryKey: ['userData'] })
         queryClient.invalidateQueries({ queryKey: ['userLoans'] })
         queryClient.invalidateQueries({ queryKey: ['stake'] })
@@ -182,8 +185,11 @@ export function WalletProvider({ children }: { children: React.ReactNode }) {
   const disconnect = useCallback(() => {
     // Freighter has no revoke API; we simply forget the session in-app.
     setAddress(null)
+    // Clear all cached query data so no previous account's data lingers
+    // after disconnect — matches the account-switch behaviour above.
+    queryClient.clear()
     toast('Wallet disconnected')
-  }, [])
+  }, [queryClient])
 
   const signXDR = useCallback(
     async (xdr: string): Promise<string> => {

@@ -57,7 +57,7 @@ function TreasuryProposalRow({
             )}
           </div>
           <p className="mt-0.5 text-sm text-muted-foreground">
-            {formatToken(p.amount)} → {formatAddress(p.recipient)}
+            {formatToken(p.amount)} → {formatStellarAddress(p.recipient)}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             For {p.votesFor} · Against {p.votesAgainst}
