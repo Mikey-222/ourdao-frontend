@@ -16,7 +16,7 @@ export const BACKEND_URL =
 
 export const isBackendConfigured = (): boolean => !!BACKEND_URL
 
-// --- Response shapes (mirror ourdao-backend/src/types.ts; amounts are strings) ---
+// --- Response shapes (mirror ourdao-backend/src/types.ts as of commit 7620d26; amounts are strings) ---
 
 export interface BackendStats {
   totalMembers: number
@@ -24,21 +24,34 @@ export interface BackendStats {
   totalLoanProposals: number
   totalLoans: number
   activeLoans: number
+  defaultedLoans: number
   totalTreasuryProposals: number
   totalStaked: string
   lastIndexedLedger: number | null
+  secondsSinceUpdate: number | null
+  indexerStale: boolean
+  totalDefaultedValue: string
+  interestCollected: string
+  principalLent: string
+  principalRepaid: string
+  valueDefaulted: string
 }
 
+// Verified against LoanRow and /api/loans withLoanDerived route in ourdao-backend @ 7620d26
 export interface BackendLoan {
   id: number
   borrower: string
   amount: string
   outstanding: string
+  total_repayment: string
+  due_time: number | null
   status: 'active' | 'repaid' | 'defaulted'
   approved_ledger: number | null
   repaid_ledger: number | null
   defaulted_ledger: number | null
   updated_at: string
+  interest_charge?: string | null
+  repaid_amount?: string | null
 }
 
 export interface BackendNotification {

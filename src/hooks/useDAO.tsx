@@ -6,45 +6,12 @@ import toast from 'react-hot-toast'
 import { useWallet } from '@/lib/wallet'
 import { CONTRACT_ID, isContractConfigured, getTransactionUrl } from '@/lib/stellar'
 import { daoRead, daoWrite } from '@/lib/dao-client'
-import { backend, type BackendEvent, type BackendLoan } from '@/lib/backend'
-import type { UserData, DAOStats, Loan } from '@/types/dao'
+import { backend, type BackendEvent } from '@/lib/backend'
+import type { UserData, DAOStats } from '@/types/dao'
 import { MemberStatus } from '@/types/dao'
 
-// Map an indexed backend loan onto the frontend Loan shape. The indexer tracks
-// principal, outstanding balance and status; fields it doesn't yet index
-// (interest rate, term, collateral) default to 0.
-export function toLoan(l: BackendLoan): Loan {
-  const amount = asBigInt(l.amount)
-  const outstanding = asBigInt(l.outstanding)
-  return {
-    id: l.id,
-    borrower: l.borrower,
-    amount,
-    interestRate: 0,
-    repaymentTerm: 0,
-    startTime: l.approved_ledger ?? 0,
-    endTime: 0,
-    amountPaid: amount > outstanding ? amount - outstanding : BigInt(0),
-    totalInterest: BigInt(0),
-    isActive: l.status === 'active',
-    collateralAmount: BigInt(0),
-  }
-}
-
-// A Soroban unit-enum decodes as either a bare symbol string or a one-element
-// array of it; normalize both to our numeric MemberStatus.
-export function toMemberStatus(raw: unknown): MemberStatus {
-  const tag = Array.isArray(raw) ? raw[0] : raw
-  return tag === 'ActiveMember' ? MemberStatus.ACTIVE_MEMBER : MemberStatus.INACTIVE_MEMBER
-}
-
-export const asBigInt = (v: unknown): bigint => {
-  try {
-    return typeof v === 'bigint' ? v : BigInt((v as number | string) ?? 0)
-  } catch {
-    return BigInt(0)
-  }
-}
+import { asBigInt, toLoan, toMemberStatus } from '@/lib/dao-mappers'
+export { asBigInt, toLoan, toMemberStatus }
 
 export function useDAOContract() {
   return { contractId: CONTRACT_ID, configured: isContractConfigured() }
@@ -58,13 +25,14 @@ export function useUserData(): UserData {
     queryKey: ['userData', address],
     enabled: !!address && isContractConfigured(),
     queryFn: async () => {
-      const [isMember, isAdmin, member, pendingYield] = await Promise.all([
+      const [isMember, isAdmin, member, pendingYield, exitShare] = await Promise.all([
         daoRead.isMember(address!),
         daoRead.isAdmin(address!),
         daoRead.getMember(address!),
         daoRead.getPendingYield(address!),
+        daoRead.calculateExitShare ? daoRead.calculateExitShare(address!).catch(() => null) : Promise.resolve(null),
       ])
-      return { isMember, isAdmin, member, pendingYield }
+      return { isMember, isAdmin, member, pendingYield, exitShare }
     },
   })
 
@@ -91,7 +59,10 @@ export function useUserData(): UserData {
           status: toMemberStatus(m.status),
           joinDate: Number(m.join_ledger ?? 0),
           contributionAmount: asBigInt(m.contribution),
-          shareBalance: asBigInt(m.share_balance),
+          // Member.share_balance in ourdao-contracts is a dead field (only set at join/exit, never updated).
+          // Paired contract issue: https://github.com/Mikey-222/ourdao-contracts/issues/42
+          // We query daoRead.calculateExitShare(address) to compute the member's live treasury claim.
+          shareBalance: asBigInt(data?.exitShare ?? m.share_balance),
           hasActiveLoan: !!m.has_active_loan,
           lastLoanDate: Number(m.last_loan_time ?? 0),
         }
@@ -104,11 +75,19 @@ export function useUserData(): UserData {
   }
 }
 
-type ExtendedStats = DAOStats & {
+export type ExtendedStats = DAOStats & {
   initialized: boolean
   isPaused: boolean
   membershipFee: bigint
   consensusThreshold: number
+  indexerStale: boolean
+  secondsSinceUpdate: number | null
+  interestCollected: string
+  principalLent: string
+  principalRepaid: string
+  valueDefaulted: string
+  defaultedLoans: number
+  totalDefaultedValue: string
   features: {
     ensVoting: boolean
     documentStorage: boolean
@@ -161,6 +140,14 @@ export function useDAOStats(): ExtendedStats {
     isPaused: !!data?.isPaused,
     membershipFee,
     consensusThreshold: Number(data?.threshold ?? 0),
+    indexerStale: agg?.indexerStale ?? false,
+    secondsSinceUpdate: agg?.secondsSinceUpdate ?? null,
+    interestCollected: agg?.interestCollected ?? '0',
+    principalLent: agg?.principalLent ?? '0',
+    principalRepaid: agg?.principalRepaid ?? '0',
+    valueDefaulted: agg?.valueDefaulted ?? '0',
+    defaultedLoans: agg?.defaultedLoans ?? 0,
+    totalDefaultedValue: agg?.totalDefaultedValue ?? '0',
     // The Soroban port's native modules are always compiled in.
     features: {
       ensVoting: true, // name registry

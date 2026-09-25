@@ -1,15 +1,28 @@
 import { IPFS_GATEWAY } from '@/constants'
 
-// Encryption utilities
-export async function encryptData(data: string, password: string): Promise<string> {
+// Helper functions for chunked Base64 encoding/decoding without stack overflow
+function bytesToBase64(bytes: Uint8Array): string {
+  let binString = ''
+  for (let i = 0; i < bytes.byteLength; i += 8192) {
+    binString += String.fromCharCode(...bytes.subarray(i, i + 8192))
+  }
+  return btoa(binString)
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binString = atob(base64)
+  const bytes = new Uint8Array(binString.length)
+  for (let i = 0; i < binString.length; i++) {
+    bytes[i] = binString.charCodeAt(i)
+  }
+  return bytes
+}
+
+export async function encryptBytes(data: Uint8Array, password: string): Promise<string> {
   const encoder = new TextEncoder()
-  const decoder = new TextDecoder()
-  
-  // Generate salt and IV
   const salt = crypto.getRandomValues(new Uint8Array(16))
   const iv = crypto.getRandomValues(new Uint8Array(12))
-  
-  // Derive key from password
+
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
     encoder.encode(password),
@@ -17,7 +30,7 @@ export async function encryptData(data: string, password: string): Promise<strin
     false,
     ['deriveBits', 'deriveKey']
   )
-  
+
   const key = await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
@@ -30,38 +43,29 @@ export async function encryptData(data: string, password: string): Promise<strin
     false,
     ['encrypt', 'decrypt']
   )
-  
-  // Encrypt data
+
   const encrypted = await crypto.subtle.encrypt(
     { name: 'AES-GCM', iv: iv },
     key,
-    encoder.encode(data)
+    data as unknown as BufferSource
   )
-  
-  // Combine salt, iv, and encrypted data
+
   const combined = new Uint8Array(salt.length + iv.length + encrypted.byteLength)
   combined.set(salt, 0)
   combined.set(iv, salt.length)
   combined.set(new Uint8Array(encrypted), salt.length + iv.length)
-  
-  return btoa(String.fromCharCode(...combined))
+
+  return bytesToBase64(combined)
 }
 
-export async function decryptData(encryptedData: string, password: string): Promise<string> {
+export async function decryptBytes(encryptedData: string, password: string): Promise<Uint8Array> {
   const encoder = new TextEncoder()
-  const decoder = new TextDecoder()
-  
-  // Decode base64
-  const combined = new Uint8Array(
-    atob(encryptedData).split('').map(char => char.charCodeAt(0))
-  )
-  
-  // Extract components
+  const combined = base64ToBytes(encryptedData)
+
   const salt = combined.slice(0, 16)
   const iv = combined.slice(16, 28)
   const encrypted = combined.slice(28)
-  
-  // Derive key from password
+
   const keyMaterial = await crypto.subtle.importKey(
     'raw',
     encoder.encode(password),
@@ -69,7 +73,7 @@ export async function decryptData(encryptedData: string, password: string): Prom
     false,
     ['deriveBits', 'deriveKey']
   )
-  
+
   const key = await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
@@ -82,15 +86,24 @@ export async function decryptData(encryptedData: string, password: string): Prom
     false,
     ['encrypt', 'decrypt']
   )
-  
-  // Decrypt data
+
   const decrypted = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: iv },
     key,
     encrypted
   )
-  
-  return decoder.decode(decrypted)
+
+  return new Uint8Array(decrypted)
+}
+
+// Encryption utilities for string data
+export async function encryptData(data: string, password: string): Promise<string> {
+  return encryptBytes(new TextEncoder().encode(data), password)
+}
+
+export async function decryptData(encryptedData: string, password: string): Promise<string> {
+  const decryptedBytes = await decryptBytes(encryptedData, password)
+  return new TextDecoder().decode(decryptedBytes)
 }
 
 // IPFS upload with encryption. Encryption happens here, client-side, before
@@ -101,15 +114,14 @@ export async function uploadToIPFS(
   encrypt: boolean = false,
   password?: string
 ): Promise<{ hash: string; size: number; encrypted: boolean }> {
-  const fileContent = await file.arrayBuffer()
+  const fileContent = new Uint8Array(await file.arrayBuffer())
   let processedData: Uint8Array
 
   if (encrypt && password) {
-    const fileText = new TextDecoder().decode(fileContent)
-    const encryptedText = await encryptData(fileText, password)
+    const encryptedText = await encryptBytes(fileContent, password)
     processedData = new TextEncoder().encode(encryptedText)
   } else {
-    processedData = new Uint8Array(fileContent)
+    processedData = fileContent
   }
 
   // TS's Uint8Array is generic over its buffer type as of TS 5.7+; BlobPart
@@ -150,9 +162,9 @@ export async function downloadFromIPFS(
 
   if (encrypted && password) {
     const encryptedText = new TextDecoder().decode(fileData)
-    const decryptedText = await decryptData(encryptedText, password)
+    const content = await decryptBytes(encryptedText, password)
     return {
-      content: new TextEncoder().encode(decryptedText),
+      content,
       decrypted: true,
     }
   }

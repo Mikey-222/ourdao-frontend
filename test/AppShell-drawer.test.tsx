@@ -13,6 +13,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/hooks/useDAO', () => ({
   useUserData: (): Partial<UserData> => ({ isAdmin: false }),
+  useDAOStats: () => ({ indexerStale: false }),
 }))
 
 vi.mock('@/lib/stellar', () => ({

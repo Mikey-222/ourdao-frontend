@@ -6,27 +6,6 @@
   "engines": {
     "node": ">=20.0.0"
   },
-  /* AUDIT COMMENT - ISSUE #153:
-   * ✅ PERFECT: engines field added per issue requirements
-   *
-   * CURRENT STATUS: This field documents the Node version requirement
-   * that CI enforces. See .github/workflows/ci.yml: node-version: 20
-   *
-   * CONTEXT: Repo has both package-lock.json and bun.lock, indicating
-   * multiple toolchains in use. Contributors on different Node versions
-   * will now get:
-   * - npm warning if version < 20 (advisory, not enforced by default)
-   * - Automatic detection by nvm/fnm/asdf via .nvmrc (when present)
-   * - Clear documentation in CONTRIBUTING.md
-   *
-   * NOTE: engines is advisory-only in npm by default (only warns).
-   * Set engine-strict=true in .npmrc if strict enforcement is desired.
-   *
-   * SUGGESTED UPGRADES:
-   * - Keep as ">=20.0.0" (range, not pinned) to avoid friction
-   * - Consider "^20.0.0" (caret range) for LTS stability
-   * - Monitor if contributors on Node 22+ LTS encounter issues
-   */
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -40,21 +19,12 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
-    "@radix-ui/react-avatar": "^1.1.10",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-dropdown-menu": "^2.1.16",
-    "@radix-ui/react-hover-card": "^1.1.15",
-    "@radix-ui/react-navigation-menu": "^1.2.14",
-    "@radix-ui/react-popover": "^1.1.23",
-    "@radix-ui/react-separator": "^1.1.7",
-    "@radix-ui/react-slot": "^1.2.3",
-    "@radix-ui/react-tabs": "^1.1.13",
-    "@stellar/freighter-api": "^4.1.0",
     "@radix-ui/react-avatar": "^1.2.6",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
     "@radix-ui/react-hover-card": "^1.1.23",
     "@radix-ui/react-navigation-menu": "^1.2.22",
+    "@radix-ui/react-popover": "^1.1.23",
     "@radix-ui/react-separator": "^1.1.15",
     "@radix-ui/react-slot": "^1.3.3",
     "@radix-ui/react-tabs": "^1.1.21",

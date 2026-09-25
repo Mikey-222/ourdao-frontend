@@ -115,3 +115,40 @@ describe('getIPFSUrl', () => {
     expect(getIPFSUrl('QmSomeHash')).toContain('QmSomeHash')
   })
 })
+
+describe('IPFS end-to-end binary round-trip', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn())
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('round-trips a large non-UTF8 binary file (>150 KB) through upload and download', async () => {
+    // 200 KB fixture containing non-UTF-8 byte sequences (e.g., 0xFF, 0x80, 0x00)
+    const originalBytes = new Uint8Array(200_000)
+    for (let i = 0; i < originalBytes.length; i++) {
+      originalBytes[i] = (i * 37) % 256
+    }
+    const file = new File([originalBytes], 'binary.dat', { type: 'application/octet-stream' })
+
+    // Mock upload response
+    vi.mocked(fetch).mockResolvedValueOnce(jsonResponse({ hash: 'QmBinaryHash' }))
+
+    const uploadResult = await uploadToIPFS(file, true, 'strong-pass')
+    expect(uploadResult.hash).toBe('QmBinaryHash')
+
+    // Extract posted ciphertext body from upload call
+    const [, uploadInit] = vi.mocked(fetch).mock.calls[0]
+    const uploadedBlob = uploadInit!.body as Blob
+    const ciphertextBuffer = await uploadedBlob.arrayBuffer()
+    const ciphertextBytes = new Uint8Array(ciphertextBuffer)
+
+    // Mock download response returning the exact ciphertext
+    vi.mocked(fetch).mockResolvedValueOnce(bytesResponse(ciphertextBytes))
+
+    const downloadResult = await downloadFromIPFS('QmBinaryHash', true, 'strong-pass')
+    expect(downloadResult.content).toEqual(originalBytes)
+  })
+})
+

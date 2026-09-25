@@ -26,7 +26,7 @@ import NotificationCenter from '@/components/NotificationCenter'
 import { OrbitMark } from '@/components/OrbitMark'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
-import { useUserData } from '@/hooks/useDAO'
+import { useUserData, useDAOStats } from '@/hooks/useDAO'
 import { isContractConfigured } from '@/lib/stellar'
 import { cn } from '@/lib/utils'
 
@@ -46,7 +46,8 @@ const NAV_ITEMS: NavItem[] = [
 
 const ADMIN_ITEM: NavItem = { name: 'Admin', href: '/admin', icon: Cog6ToothIcon }
 
-function isActive(pathname: string, href: string): boolean {
+function isActive(pathname: string | null, href: string): boolean {
+  if (!pathname) return false
   return pathname === href || pathname.startsWith(`${href}/`)
 }
 
@@ -106,6 +107,7 @@ interface AppShellProps {
 
 export function AppShell({ children }: AppShellProps) {
   const [mobileOpen, setMobileOpen] = useState(false)
+  const stats = useDAOStats()
 
   return (
     // Wraps the whole shell (not just the drawer) so SheetTrigger — deep in
@@ -146,6 +148,15 @@ export function AppShell({ children }: AppShellProps) {
               NEXT_PUBLIC_CONTRACT_ID
             </code>{' '}
             to enable live data. The app is running in preview mode.
+          </span>
+        </div>
+      )}
+
+      {stats.indexerStale && (
+        <div data-testid="indexer-stale-banner" className="flex items-center gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-300 sm:px-6">
+          <ExclamationTriangleIcon className="h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span>
+            Indexer data is stale{stats.secondsSinceUpdate != null ? ` (last updated ${stats.secondsSinceUpdate}s ago)` : ''}. Displayed off-chain stats and history may be delayed.
           </span>
         </div>
       )}

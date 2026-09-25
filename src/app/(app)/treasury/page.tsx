@@ -15,6 +15,7 @@ import {
   CheckIcon,
   XMarkIcon,
   BuildingLibraryIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline'
 import {
   useUserData,
@@ -26,6 +27,7 @@ import {
   useHasVoted,
   type UITreasuryProposal,
 } from '@/hooks/useDAO'
+import { asBigInt } from '@/lib/dao-mappers'
 import { formatToken, formatAddress, parseToken } from '@/lib/utils'
 import { PROPOSAL_STATUS_LABELS } from '@/constants'
 
@@ -198,7 +200,7 @@ export default function TreasuryPage() {
         subtitle="DAO funds, member staking, and treasury withdrawals"
       />
       {/* Overview */}
-      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Treasury Balance"
           value={formatToken(stats.treasuryBalance)}
@@ -222,6 +224,34 @@ export default function TreasuryPage() {
           value={formatToken(userData.pendingYield)}
           icon={GiftIcon}
           tint="bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-950/50 dark:text-fuchsia-400"
+        />
+      </div>
+
+      {/* Lifetime Treasury Metrics */}
+      <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Interest Collected"
+          value={formatToken(asBigInt(stats.interestCollected))}
+          icon={GiftIcon}
+          tint="bg-emerald-50 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400"
+        />
+        <StatCard
+          label="Principal Lent"
+          value={formatToken(asBigInt(stats.principalLent))}
+          icon={BanknotesIcon}
+          tint="bg-blue-50 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400"
+        />
+        <StatCard
+          label="Principal Repaid"
+          value={formatToken(asBigInt(stats.principalRepaid))}
+          icon={ArrowTrendingUpIcon}
+          tint="bg-indigo-50 text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-400"
+        />
+        <StatCard
+          label="Value Defaulted"
+          value={formatToken(asBigInt(stats.valueDefaulted))}
+          icon={ExclamationTriangleIcon}
+          tint="bg-rose-50 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400"
         />
       </div>
 

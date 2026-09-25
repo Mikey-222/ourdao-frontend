@@ -20,6 +20,8 @@ describe('toLoan', () => {
       borrower: 'GA',
       amount: '1000',
       outstanding: '400',
+      total_repayment: '1100',
+      due_time: 1700000000,
       status: 'active',
       approved_ledger: 50,
       repaid_ledger: null,
@@ -31,6 +33,7 @@ describe('toLoan', () => {
     expect(loan.amountPaid).toBe(BigInt(600))
     expect(loan.isActive).toBe(true)
     expect(loan.startTime).toBe(50)
+    expect(loan.endTime).toBe(1700000000)
   })
 
   it('clamps amountPaid to zero rather than going negative', () => {
@@ -39,6 +42,8 @@ describe('toLoan', () => {
       borrower: 'GA',
       amount: '100',
       outstanding: '150', // shouldn't happen, but must not produce a negative paid amount
+      total_repayment: '110',
+      due_time: null,
       status: 'active',
       approved_ledger: null,
       repaid_ledger: null,
@@ -54,6 +59,8 @@ describe('toLoan', () => {
       borrower: 'GA',
       amount: '100',
       outstanding: '0',
+      total_repayment: '110',
+      due_time: 1700000000,
       status: 'repaid',
       approved_ledger: 1,
       repaid_ledger: 2,
@@ -69,6 +76,8 @@ describe('toLoan', () => {
       borrower: 'GA',
       amount: '100',
       outstanding: '60',
+      total_repayment: '110',
+      due_time: 1700000000,
       status: 'defaulted',
       approved_ledger: 1,
       repaid_ledger: null,

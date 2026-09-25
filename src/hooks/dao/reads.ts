@@ -20,13 +20,14 @@ export function useUserData(): UserData {
     queryKey: ['userData', address],
     enabled: !!address && isContractConfigured(),
     queryFn: async () => {
-      const [isMember, isAdmin, member, pendingYield] = await Promise.all([
+      const [isMember, isAdmin, member, pendingYield, exitShare] = await Promise.all([
         daoRead.isMember(address!),
         daoRead.isAdmin(address!),
         daoRead.getMember(address!),
         daoRead.getPendingYield(address!),
+        daoRead.calculateExitShare ? daoRead.calculateExitShare(address!).catch(() => null) : Promise.resolve(null),
       ])
-      return { isMember, isAdmin, member, pendingYield }
+      return { isMember, isAdmin, member, pendingYield, exitShare }
     },
   })
 
@@ -53,7 +54,10 @@ export function useUserData(): UserData {
           status: toMemberStatus(m.status),
           joinDate: Number(m.join_ledger ?? 0),
           contributionAmount: asBigInt(m.contribution),
-          shareBalance: asBigInt(m.share_balance),
+          // Member.share_balance in ourdao-contracts is a dead field (only set at join/exit, never updated).
+          // Paired contract issue: https://github.com/Mikey-222/ourdao-contracts/issues/42
+          // We query daoRead.calculateExitShare(address) to compute the member's live treasury claim.
+          shareBalance: asBigInt(data?.exitShare ?? m.share_balance),
           hasActiveLoan: !!m.has_active_loan,
           lastLoanDate: Number(m.last_loan_time ?? 0),
         }
@@ -71,6 +75,14 @@ export type ExtendedStats = DAOStats & {
   isPaused: boolean
   membershipFee: bigint
   consensusThreshold: number
+  indexerStale: boolean
+  secondsSinceUpdate: number | null
+  interestCollected: string
+  principalLent: string
+  principalRepaid: string
+  valueDefaulted: string
+  defaultedLoans: number
+  totalDefaultedValue: string
   features: {
     ensVoting: boolean
     documentStorage: boolean
@@ -122,6 +134,14 @@ export function useDAOStats(): ExtendedStats {
     isPaused: !!data?.isPaused,
     membershipFee,
     consensusThreshold: Number(data?.threshold ?? 0),
+    indexerStale: agg?.indexerStale ?? false,
+    secondsSinceUpdate: agg?.secondsSinceUpdate ?? null,
+    interestCollected: agg?.interestCollected ?? '0',
+    principalLent: agg?.principalLent ?? '0',
+    principalRepaid: agg?.principalRepaid ?? '0',
+    valueDefaulted: agg?.valueDefaulted ?? '0',
+    defaultedLoans: agg?.defaultedLoans ?? 0,
+    totalDefaultedValue: agg?.totalDefaultedValue ?? '0',
     // The Soroban port's native modules are always compiled in.
     features: {
       ensVoting: true, // name registry
